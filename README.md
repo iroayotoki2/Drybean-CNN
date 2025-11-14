@@ -1,15 +1,12 @@
 # Soybean-CNN
-Research about the Soybean CNN for the BIBM Conference.
+Research about the Soybean CNN for the 2025 BIBM Conference.
 
-We also applied saliency map approach measure phenotype contribution for genome wide association study.
-Creates output files on average saliency graph along with top SNPs with highest average saliency.
-On program completion, provides average PCC (Pearson correlation coefficient) along with prompt
-for user to search saliency based on SNP name.
+We applied a saliency map approach to measure phenotype contribution for genome wide association study. Creates output files on average saliency graph along with top SNPs with highest average saliency. On program completion, it provides the average PCC (Pearson correlation coefficient) along with a prompt for the user to search saliency based on SNP name.
 The program is implemented using Keras3.5 and Tensorflow backend with python 3.1
 
 ### Prerequisites
 
-Python packages are required,
+Python packages required:
 
 ```
 absl_py==2.1.0 
@@ -149,6 +146,13 @@ alternative:
 
 docker run --rm -it -v "%cd%:/app" snp-gwas-predictor python3 height.py --summary
 ```
+
+## Authors
+Jake Goode, Madhurika Madhu, Raeein Bagheri, and Yan Yan
+
+School of Computer Science
+
+University of Guelph, Guelph, Canada
 
 ## License
 GNU v2.0
