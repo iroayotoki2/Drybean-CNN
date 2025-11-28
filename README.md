@@ -147,12 +147,17 @@ alternative:
 docker run --rm -it -v "%cd%:/app" snp-gwas-predictor python3 height.py --summary
 ```
 
-## Authors
+## Current Authors
 Jake Goode, Madhurika Madhu, Raeein Bagheri, and Yan Yan
 
 School of Computer Science
 
-University of Guelph, Guelph, Canada
+University of Guelph, Guelph ON, Canada
+
+## Previous Authors
+Yang Liu 
+
+University of Missouri, Columbia MO, USA
 
 ## License
 GNU v2.0
