@@ -3,9 +3,24 @@ import numpy as np
 import pandas as pd
 from keras.models import load_model
 from height import readData, get_saliency, plot_average_saliency, collect_saliency_across_folds, export_top_k_saliency, isru, indices_to_one_hot, nb_classes
+import argparse 
 
-IMP_input = "IMP_height.txt"
-QA_input = "QA_height.txt"
+
+parser = argparse.ArgumentParser()
+parser.add_argument('IMP_file', help="Imputed file")
+parser.add_argument('QA_file', help="QA file")
+args = parser.parse_args()
+
+input_path = args.IMP_file
+QA_path = args.QA_file
+
+base = os.path.splitext(input_path)[0]
+IMP_input = f"{base}_processed.tsv"
+
+qa_base =  os.path.splitext(QA_path)[0]
+QA_input =  f"{QA_base}_processed.tsv"
+
+
 
 NUM_FOLDS = 10
 

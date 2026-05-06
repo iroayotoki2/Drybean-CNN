@@ -11,7 +11,7 @@ tf.config.threading.set_intra_op_parallelism_threads(2)
 tf.config.threading.set_inter_op_parallelism_threads(2)
 import numpy as np
 import pandas as pd
-from keras import layer
+from keras import layers
 from keras import regularizers
 from keras.models import Model
 from keras.layers import *
@@ -26,9 +26,7 @@ matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import math as m
 import keras.backend as K
-import rpy2.robjects as robjects
-from rpy2.robjects import pandas2ri
-from rpy2.robjects.packages import importr
+
 
 os.environ["TF_XLA_FLAGS"] = "--tf_xla_auto_jit=2" #New
 tf.config.set_visible_devices([], 'GPU') #New
@@ -501,7 +499,7 @@ if __name__ == '__main__':
 	parser = argparse.ArgumentParser()
 	parser.add_argument('IMP_file', help="Imputed file")
 	parser.add_argument('QA_file', help="QA file")
-	parser.add_argument('pheno', help="Phenotype file")
+	parser.add_argument('--pheno', help="Phenotype file")
 	parser.add_argument('--fold', type=int, default=None, help="Fold number (1–10)")
 	parser.add_argument('--summary', action='store_true', help="Run saliency summary after all folds")
 	args = parser.parse_args()
@@ -538,4 +536,5 @@ if __name__ == '__main__':
 		main(IMP_input, QA_input, run_fold=args.fold)
 	else:
 		print("🌀 No fold specified — running all folds via run_all_folds.py ...")
-		subprocess.run(['python3', 'run_all_folds.py'])
+		subprocess.run(['python3', 'run_all_folds.py', IMP_input, QA_input])
+ 
