@@ -1,9 +1,6 @@
-# Soybean-CNN
-Research about the Soybean CNN for the 2025 BIBM Conference.
+# Drybean-CNN
 
-We applied a saliency map approach to measure phenotype contribution for genome wide association study. Creates output files on average saliency graph along with top SNPs with highest average saliency. On program completion, it provides the average PCC (Pearson correlation coefficient) along with a prompt for the user to search saliency based on SNP name. The program is implemented using Keras3.5 and Tensorflow backend with python 3.1
-
-Link to the published paper: https://ieeexplore.ieee.org/document/11356176
+A saliency map approach was applied to measure phenotype contribution for genome wide association study.  It creates output files on average saliency graph along with top SNPs with highest average saliency. On program completion, it provides the average PCC (Pearson correlation coefficient) along with a prompt for the user to search saliency based on SNP name. The program is implemented using Keras3.5 and Tensorflow backend with python 3.1. It was adapted from the [Soybean-CNN](https://github.com/ProductiveOwl/Soybean-CNN) research by Jake Goode, Madhurika Madhu, Raeein Bagheri, and Yan Yan.
 
 ### Prerequisites
 
@@ -44,6 +41,7 @@ pillow==11.1.0
 protobuf==4.25.4 
 pygments==2.19.1 
 pyparsing==3.2.3
+pysam==0.24.0
 python_dateutil==2.9.0.post0 
 pytz==2025.2
 requests==2.32.3 
@@ -62,103 +60,55 @@ typing_extensions==4.12.2
 tzdata==2025.2
 urllib3==2.3.0 
 werkzeug==3.1.3 
-wrapt==1.17.2 
+wrapt==1.17.2
+
 ```
 
 ## Running the program
 
 The scripts train and test model with 10 fold cross validation and plot a comparison of genotype contribution using saliency map value and Wald test value.
 
-* **height.py/moisture.py/oil.py/protein.py** - *Executive scripts.*
+* **BLUE.py** - *Executive scripts.*
 * **run_all_folds.py** - *Runs all 10 folds individually.*
 * **summarize_folds.py** - *Summarizes all 10 folds without re-running program.*
 * **requirements.txt** - *Requirements of Python modules for program.*
-* **IMP_height.txt/IMP_moisture.txt/IMP_oil.txt/IMP_protein.txt** - *Inputs of imputed genotype matrix.*
-* **QA_height.txt/QA_moisture.txt/QA_oil.txt/QA_protein.txt** - *Inputs of quality assured non-imputed genotype matrix.*
-* **polytest.txt** - *Genotype contribution using Wald test score. Run with SoyNAM R package.*
-* **saliency_value.txt** - *Genotype contribution calculated using saliency map approach.*
+* **imputed_GenotypicData.vcf/** - *Inputs of imputed genotype matrix.*
+* **Raw_GenotypicData.vcf/Raw_GenotypicData_UoG.csv** - *Inputs of quality assured non-imputed genotype matrix which ca be run with either vcf or csv input.*
 
-In all three python files, change the global variable NUM_FOLDS to the folds you wish to run.
+
+In  python file, change the global variable NUM_FOLDS to the folds you wish to run.
 
 ### Running on Digital Alliance Servers
 
-After SSH'ing into servers, preform the following to run the CNN for the height phenotype.
-(Bash file, CNN_setup.sh, provided to install packages)
+After SSH'ing into servers, preform the following to run the CNN for the BLUEs.
+
 
 ```
 module load python/3.10
 virtualenv --no-download ENV
 source ENV/bin/activate
-cd HEIGHT
-python3 height.py
+cd BLUE
+python3 BLUE.py IMP_file QA_file --pheno pheno_file
 
 alternative:
-python3 height.py --fold 3 (Runs individual fold)
+python3 BLUE.py IMP_file QA_file --pheno pheno_file --fold 3 (Runs individual fold)
 ```
 
+Alternative (SLURM Job):
+ This can be run with the SLURM script CNN_slurm.sh. Edit the account name seen in line 1 (#SBATCH --account=def-cottenie) to your own account (sshare -U). Run with: 
+ ```
+sbatch CNN_slurm.sh
+ ```
 Summarize after 10 folds completed:
 ```
-python3 summarize_folds.py
+python3 summarize_folds.py IMP_file QA_file
 
 alternative:
 
-python3 height.py --summary
+python3 BLUE.py IMP_file QA_file --pheno pheno_file  --summary
 ```
 
-The user can change the phenotype from height by changing the directory and program name. For example, run the CNN for the moisture phenotype, substitute 
 
-```
-cd HEIGHT
-python3 height.py
-```
-with
-
-```
-cd MOISTURE
-python3 moisture.py
-```
-
-### Running on Docker
-
-Build image (requirements.txt file provides to install needed Python packages):
-```
-docker build -t snp-gwas-predictor .
-```
-
-Run full program:
-```
-Linux/macOS: docker run --rm -it -v "$(pwd):/app" snp-gwas-predictor
-Windows CMD: docker run --rm -it -v "%cd%:/app" snp-gwas-predictor
-Windows PowerShell: docker run --rm -it -v "${PWD}:/app" snp-gwas-predictor
-
-alternatives (height.py can be replaced with any other phenotype file):
-
-docker run --rm -v "%cd%:/app" snp-gwas-predictor python3 height.py --fold 2 (Runs selected fold and appends PCC values to export file)
-docker run --rm snp-gwas-predictor python3 height.py --fold 2 (Won’t save to PCC export file)
-```
-
-Summarize after 10 folds completed (height.py can be replaced with any other phenotype file):
-```
-Linux/macOS: docker run --rm -it -v "$(pwd):/app" snp-gwas-predictor python3 summarize_folds.py
-Windows CMD: docker run --rm -it -v "%cd%:/app" snp-gwas-predictor python3 summarize_folds.py 
-Windows PowerShell: docker run --rm -it -v "${PWD}:/app" snp-gwas-predictor python3 summarize_folds.py
-
-alternative:
-
-docker run --rm -it -v "%cd%:/app" snp-gwas-predictor python3 height.py --summary
-```
-
-## Current Authors
-Jake Goode, Madhurika Madhu, Raeein Bagheri, and Yan Yan
-
-School of Computer Science
-
-University of Guelph, Guelph ON, Canada
-
-## Previous Authors
-Yang Liu 
-
-University of Missouri, Columbia MO, USA
 
 ## License
 GNU v2.0
