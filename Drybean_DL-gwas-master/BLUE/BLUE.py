@@ -1,5 +1,8 @@
 from __future__ import print_function
 import os
+
+from pandas import read_csv
+
 os.environ["OMP_NUM_THREADS"] = "2"
 os.environ["TF_NUM_INTRAOP_THREADS"] = "2"
 os.environ["TF_NUM_INTEROP_THREADS"] = "2"
@@ -8,7 +11,7 @@ tf.config.threading.set_intra_op_parallelism_threads(2)
 tf.config.threading.set_inter_op_parallelism_threads(2)
 import numpy as np
 import pandas as pd
-from keras import layers
+from keras import layer
 from keras import regularizers
 from keras.models import Model
 from keras.layers import *
@@ -23,6 +26,9 @@ matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import math as m
 import keras.backend as K
+import rpy2.robjects as robjects
+from rpy2.robjects import pandas2ri
+from rpy2.robjects.packages import importr
 
 os.environ["TF_XLA_FLAGS"] = "--tf_xla_auto_jit=2" #New
 tf.config.set_visible_devices([], 'GPU') #New
@@ -419,20 +425,112 @@ def main(IMP_input, QA_input, run_fold=None):
 			for i in range(NUM_FOLDS):
 				writer.writerow([i + 1, IMP_corr[i], QA_corr[i]])
 
+
+
+def vcf_preprocessing(IMP_input, output_path =None):
+	from pysam import VariantFile
+	vcf = VariantFile(IMP_input)
+	data = []
+	index = []
+
+	for record in vcf:
+		index.append(record.id if record.id else f"{record.chrom}_{record.pos}")
+
+		gts = [sum(s['GT']) if s['GT'] and None not in s['GT'] else int(-1)
+		       for s in record.samples.values()]
+
+		data.append(gts)
+	# Create the final DataFrame
+	df = pd.DataFrame(data, index=index, columns=list(vcf.header.samples))
+	df_T = df.T
+	df_final = df_T.reset_index().rename(columns={'index': 'Line'})
+	df_final['Line'] = df_final['Line'].str.replace(r'\.\d+$', '', regex=True)
+
+	if output_path is None:
+		base = os.path.splitext(IMP_input)[0]
+		output_path = f"{base}_processed.tsv"
+
+	df_final.to_csv(output_path, sep='\t', index=False)
+	return output_path
+
+def csv_preprocessing(input_path, output_path=None):
+
+
+    df = pd.read_csv(input_path)
+    df.drop(df.columns[0], inplace=True, axis=1)
+
+    if output_path is None:
+        base = os.path.splitext(input_path)[0]
+        output_path = f"{base}_processed.tsv"
+
+    df.to_csv(output_path, sep='\t', index=False)
+    return output_path
+
+def combine_pheno(input_path,pheno_path, output_path=None):
+	Geno = pd.read_csv(input_path, sep='\t')
+	pheno = pd.read_csv(pheno_path, sep='\t')
+	merged_df = pd.merge(Geno, pheno, on='Line', how='left')
+
+	#Reorder columns
+	fixed_cols = ['norm_phe', 'Line', 'BLUEs']
+	snp_cols = [c for c in merged_df.columns if c not in fixed_cols]
+	# Finalize the DataFrame
+	final_df = merged_df[fixed_cols + snp_cols]
+
+	if output_path is None:
+		output_path = input_path
+
+	final_df.to_csv(output_path, sep='\t', index=False)
+	return output_path
+
+def  dummy_folds_column(input_path, output_path=None):
+	df = pd.read_csv(input_path, sep='\t')
+	if 'folds' not in df.columns:
+		df.insert(0,'folds',0)
+
+	if output_path is None:
+		output_path = input_path
+
+	df.to_csv(output_path, sep='\t', index=False)
+	return output_path
+
 if __name__ == '__main__':
-	
+
 	#os.chdir("MOISTURE")
 
 	parser = argparse.ArgumentParser()
+	parser.add_argument('IMP_file', help="Imputed file")
+	parser.add_argument('QA_file', help="QA file")
+	parser.add_argument('pheno', help="Phenotype file")
 	parser.add_argument('--fold', type=int, default=None, help="Fold number (1–10)")
 	parser.add_argument('--summary', action='store_true', help="Run saliency summary after all folds")
 	args = parser.parse_args()
 
-	IMP_input = "IMP_height.txt"
-	QA_input = "QA_height.txt"
+	IMP_input = args.IMP_file
+	QA_input = args.QA_file
+	#Data cleaning by file format to produce tsvs for the pipline
+	if IMP_input.endswith(".vcf"):
+		IMP_input= vcf_preprocessing(IMP_input)
+	elif IMP_input.endswith(".csv"):
+		IMP_input = csv_preprocessing(IMP_input)
 
-	assign_folds_to_file("IMP_height.txt")  # assign new folds
-	sync_folds_column("IMP_height.txt", "QA_height.txt")  # sync folds to QA
+
+	if QA_input.endswith(".vcf"):
+		QA_input= vcf_preprocessing(QA_input)
+	elif QA_input.endswith(".csv"):
+		QA_input = csv_preprocessing(QA_input)
+	#Add normalized and raw phenotypes
+	if args.pheno:
+		pheno_path = args.pheno
+		IMP_input = combine_pheno(IMP_input, pheno_path)
+		QA_input = combine_pheno(QA_input, pheno_path)
+	#Add empty fold column if absent
+	IMP_input=dummy_folds_column(IMP_input)
+	QA_input=dummy_folds_column(QA_input)
+
+
+	assign_folds_to_file(IMP_input)  # assign new folds
+	sync_folds_column(IMP_input, QA_input)  # sync folds to QA
 
 	if args.summary:
 		run_saliency_summary(IMP_input, QA_input)
