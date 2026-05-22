@@ -101,11 +101,7 @@ sbatch CNN_slurm.sh
  ```
 Summarize after 10 folds completed:
 ```
-python3 summarize_folds.py IMP_file QA_file
-
-alternative:
-
-python3 BLUE.py IMP_file QA_file --pheno pheno_file  --summary
+python3 BLUE.py IMP_file QA_file --pheno pheno_file --summary
 ```
 
 
