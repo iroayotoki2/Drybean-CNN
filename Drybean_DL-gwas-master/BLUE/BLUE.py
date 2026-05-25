@@ -348,7 +348,7 @@ def run_saliency_summary(IMP_input, QA_input, repeat):
 		except ValueError:
 			print("❌ SNP not found. Please check the name and try again.\n")
 
-def main(IMP_input, QA_input, run_fold=None, repeat):
+def main(IMP_input, QA_input, repeat, run_fold=None):
 	IMP_corr = []
 	QA_corr = []
 
@@ -557,7 +557,7 @@ if __name__ == '__main__':
 		if args.summary:
 			run_saliency_summary(IMP_input, QA_input, repeat=i)
 		elif args.fold:
-			main(IMP_input, QA_input, run_fold=args.fold, repeat=i)
+			main(IMP_input, QA_input, repeat=i, run_fold=args.fold)
 		else:
 			print("🌀 No fold specified — running all folds via run_all_folds.py ...")
 			subprocess.run(['python3', 'run_all_folds.py', IMP_input, QA_input])
