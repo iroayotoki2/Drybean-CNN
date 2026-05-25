@@ -6,7 +6,7 @@ parser.add_argument('IMP_file', help="Imputed file")
 parser.add_argument('QA_file', help="QA file")
 args = parser.parse_args()
 
-NUM_FOLDS = 10
+NUM_FOLDS = 5
 
 print(f"Updating data files with {NUM_FOLDS} folds.")
 

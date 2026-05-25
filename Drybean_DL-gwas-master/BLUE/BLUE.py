@@ -17,6 +17,7 @@ from keras.models import Model
 from keras.layers import *
 import keras
 from scipy.stats import pearsonr
+from scipy.stats import kendalltau
 from keras.models import load_model
 import csv
 import argparse
@@ -40,7 +41,7 @@ if gpus:
 
 nb_classes = 4
 
-NUM_FOLDS = 10
+NUM_FOLDS = 5
 
 def assign_folds_to_file(filename, output_filename=None, seed=42):
 	if output_filename is None:
@@ -111,14 +112,14 @@ def readData(input):
 	snp_names = snp_df.columns.tolist()
 	pheno = data.iloc[:,1].apply(pd.to_numeric, errors='coerce').values
 	folds = data.iloc[:,0].apply(pd.to_numeric, errors='coerce').values
-	
+	Lines = data.iloc[:,2]
 	#arr = np.empty(shape=(SNP.shape[0],SNP.shape[1] , nb_classes))
 	# arr = np.memmap('snp_encoded.dat', dtype='float32', mode='w+', shape=(SNP.shape[0], SNP.shape[1], nb_classes))
 	
 	# for i in range(0,SNP.shape[0]):
 	# 	arr[i] = indices_to_one_hot(pd.to_numeric(SNP[i],downcast='signed'), nb_classes)
 		
-	return SNP.astype(np.int8), pheno, folds, snp_names
+	return SNP.astype(np.int8), pheno, folds, snp_names , Lines
 	
 def resnet(input):
 	
@@ -204,11 +205,12 @@ def get_saliency(input_tensor, model):
 	saliency = tf.reduce_max(tf.abs(gradient), axis=-1)  # max across classes
 	return saliency.numpy().squeeze()  # shape: (num_SNPs,)
 
-def export_top_k_saliency(snp_names, saliency_values, k=20, output_file="top_saliency_snps.csv"):
+def export_top_k_saliency(snp_names, saliency_values, k=20, output_file="top_saliency_snps.csv", repeat = 0):
 	# Sort SNPs by saliency (descending)
 	top_indices = np.argsort(saliency_values)[::-1][:k]
 	top_snps = [(snp_names[i], saliency_values[i]) for i in top_indices]
-
+	if repeat != 0:
+		output_file =  f"Repeat_{repeat}/{output_file}"
 	# Write to CSV
 	with open(output_file, mode='w', newline='') as file:
 		writer = csv.writer(file)
@@ -217,14 +219,14 @@ def export_top_k_saliency(snp_names, saliency_values, k=20, output_file="top_sal
 			writer.writerow([snp, f"{score:.6f}"])
 	print(f"📁 Top {k} SNPs by saliency saved to '{output_file}'")
 
-def collect_saliency_across_folds(imp_SNP, imp_pheno, folds):
+def collect_saliency_across_folds(imp_SNP, imp_pheno, folds, repeat):
 	all_saliencies = []
 
 	for i in range(1, NUM_FOLDS + 1):
-		print(f"Processing fold {i}...")
+		print(f"Processing Repeat {repeat} fold {i}...")
 
 		# Load the trained model for this fold
-		model_path = f"model_IMP/model_{i}.h5"
+		model_path = f"Repeat_{repeat}/model_IMP/model_{i}.h5"
 		model = load_model(model_path, custom_objects={"isru": isru})
 		model.compile(loss='mean_squared_error', optimizer='adam')
 
@@ -289,7 +291,7 @@ def model_train(testSNP, valSNP, trainSNP, testPheno, valPheno, trainPheno, mode
 	pred = pred.flatten()
 
 	corr = pearsonr(pred, testPheno)[0]
-	return history, corr
+	return history, pred, corr
 	
 def safe_delete(*varnames):
 	for name in varnames:
@@ -298,16 +300,16 @@ def safe_delete(*varnames):
 		elif name in globals():
 			del globals()[name]
 
-def run_saliency_summary(IMP_input, QA_input):
-	imp_SNP, imp_pheno, folds, snp_names = readData(IMP_input)
+def run_saliency_summary(IMP_input, QA_input, repeat):
+	imp_SNP, imp_pheno, folds, snp_names, _ = readData(IMP_input)
 
-	avg_saliency = collect_saliency_across_folds(imp_SNP, imp_pheno, folds)
+	avg_saliency = collect_saliency_across_folds(imp_SNP, imp_pheno, folds, repeat)
 	plot_average_saliency(avg_saliency)
-	
+
 	# After folds are run
 	if os.path.exists("fold_pcc_log.csv"):
-		df = pd.read_csv("fold_pcc_log.csv", header=None, names=["Fold", "PCC_Imputed", "PCC_NonImputed"])
-		df = df.sort_values("Fold")
+		df = pd.read_csv("fold_pcc_log.csv", header=None, names=["Repeat", "Fold", "PCC_Imputed", "PCC_NonImputed"])
+		df = df.sort_values(["Repeat", "Fold"])
 		df.to_csv("fold_pcc_summary.csv", index=False)
 
 		print("✅ Summary CSV generated: fold_pcc_summary.csv")
@@ -324,7 +326,7 @@ def run_saliency_summary(IMP_input, QA_input):
 
 	saliency_maps = []
 	for i in range(1, NUM_FOLDS + 1):
-		model_path = f"model_IMP/model_{i}.h5"
+		model_path = f"Repeat_{repeat}/model_IMP/model_{i}.h5"
 		model = load_model(model_path, custom_objects={"isru": isru})
 		model.compile(loss='mean_squared_error', optimizer='adam')
 
@@ -332,7 +334,7 @@ def run_saliency_summary(IMP_input, QA_input):
 		saliency_maps.append(sal)
 
 	avg_saliency_map = np.mean(np.stack(saliency_maps), axis=0)
-	export_top_k_saliency(snp_names, avg_saliency_map, k=20)
+	export_top_k_saliency(snp_names, avg_saliency_map, k= len(snp_names), repeat)
 
 	# Interactive SNP viewer
 	while True:
@@ -346,20 +348,21 @@ def run_saliency_summary(IMP_input, QA_input):
 		except ValueError:
 			print("❌ SNP not found. Please check the name and try again.\n")
 
-def main(IMP_input, QA_input, run_fold=None):
+def main(IMP_input, QA_input, run_fold=None, repeat):
 	IMP_corr = []
 	QA_corr = []
 
 	# Load data once
-	imp_SNP, imp_pheno, folds, snp_names = readData(IMP_input)
-	QA_SNP, QA_pheno, folds, _ = readData(QA_input)
+	imp_SNP, imp_pheno, folds, snp_names, Lines = readData(IMP_input)
+	QA_SNP, QA_pheno, folds, _, _ = readData(QA_input)
 	PHENOTYPE = imp_pheno
+
 
 	# If a specific fold is requested, just run that one; otherwise run all
 	fold_range = [run_fold] if run_fold else range(1, NUM_FOLDS + 1)
-
+	sv_data = []
 	for i in fold_range:
-		print(f"\n🔁 Starting fold {i}...")
+		print(f"\n🔁 Starting Repeat{repeat}fold {i} ...")
 
 		# Identify test fold
 		testIdx = np.where(folds == i)[0]
@@ -372,7 +375,7 @@ def main(IMP_input, QA_input, run_fold=None):
 		else:
 			# With 2 folds: split the other fold randomly into train/val
 			other_idx = np.where(folds != i)[0]
-			np.random.seed(42)
+			np.random.seed(repeat)
 			np.random.shuffle(other_idx)
 			val_size = int(0.2 * len(other_idx))
 			valIdx = other_idx[:val_size]
@@ -384,22 +387,24 @@ def main(IMP_input, QA_input, run_fold=None):
 		# Partition data
 		trainSNP, trainSNP_QA, trainPheno = imp_SNP[trainIdx], QA_SNP[trainIdx], PHENOTYPE[trainIdx]
 		valSNP, valSNP_QA, valPheno = imp_SNP[valIdx], QA_SNP[valIdx], PHENOTYPE[valIdx]
-		testSNP, testSNP_QA, testPheno = imp_SNP[testIdx], QA_SNP[testIdx], PHENOTYPE[testIdx]
+		testSNP, testSNP_QA, testPheno, testLines = imp_SNP[testIdx], QA_SNP[testIdx], PHENOTYPE[testIdx], Lines[testIdx]
 
 		# Train and evaluate on imputed data
-		history, corr = model_train(
+		history, pred, corr = model_train(
 			testSNP, valSNP, trainSNP, testPheno, valPheno, trainPheno,
-			f'model_IMP/model_{i}.h5',
-			f'model_IMP/model_weights{i}.weights.h5'
+			f'Repeat_{repeat}/model_IMP/model_{i}.h5',
+			f'Repeat_{repeat}/model_IMP/model_weights{i}.weights.h5'
 		)
 		IMP_corr.append(float(f'{corr:.4f}'))
 		print(f"✅ Fold {i} (imputed) PCC: {corr:.4f}")
+		fold_pred = pd.DataFrame({"fold": i, "Line": testLines,  "predicted": pred, "phenotype": testPheno })
+		sv_data.append(fold_pred)
 
 		# Train and evaluate on non-imputed data
-		history, corr = model_train(
+		history, _, corr = model_train(
 			testSNP_QA, valSNP_QA, trainSNP_QA, testPheno, valPheno, trainPheno,
-			f'model_QA/model_{i}.h5',
-			f'model_QA/model_weights{i}.weights.h5'
+			f'Repeat_{repeat}/model_QA/model_{i}.h5',
+			f'Repeat_{repeat}/model_QA/model_weights{i}.weights.h5'
 		)
 		QA_corr.append(float(f'{corr:.4f}'))
 		print(f"✅ Fold {i} (non-imputed) PCC: {corr:.4f}")
@@ -410,16 +415,19 @@ def main(IMP_input, QA_input, run_fold=None):
 		K.clear_session()
 		gc.collect()
 
+	sv_data = pd.concat(sv_data, ignore_index=True)
+	sv_data.to_csv(f"Repeat_{repeat}/fold_data.csv", index=False)
+
 	if run_fold is not None:
 		with open("fold_pcc_log.csv", "a", newline="") as file:
 			writer = csv.writer(file)
-			writer.writerow([run_fold, IMP_corr[0], QA_corr[0]])
+			writer.writerow([repeat, run_fold, IMP_corr[0], QA_corr[0]])
 			print(f"✅ Saved fold {run_fold} to fold_pcc_log.csv")
 
 	if run_fold is None:
 		with open("fold_pcc_summary.csv", mode="w", newline="") as file:
 			writer = csv.writer(file)
-			writer.writerow(["Fold", "PCC_Imputed", "PCC_NonImputed"])
+			writer.writerow(["Repeat", "Fold", "PCC_Imputed", "PCC_NonImputed"])
 			for i in range(NUM_FOLDS):
 				writer.writerow([i + 1, IMP_corr[i], QA_corr[i]])
 
@@ -432,7 +440,7 @@ def vcf_preprocessing(IMP_input, output_path =None):
 	index = []
 
 	for record in vcf:
-		index.append(record.id if record.id else f"{record.chrom}_{record.pos}")
+		index.append(f"{record.chrom}_{record.pos}")
 
 		gts = [sum(s['GT']) if s['GT'] and None not in s['GT'] else int(-1)
 		       for s in record.samples.values()]
@@ -444,6 +452,7 @@ def vcf_preprocessing(IMP_input, output_path =None):
 	df_final = df_T.reset_index().rename(columns={'index': 'Line'})
 	df_final['Line'] = df_final['Line'].str.replace(r'\.\d+$', '', regex=True)
 
+	df_final = df_final.drop_duplicates(subset="Line", keep="first")
 	if output_path is None:
 		base = os.path.splitext(IMP_input)[0]
 		output_path = f"{base}_processed.tsv"
@@ -461,6 +470,8 @@ def csv_preprocessing(input_path, output_path=None):
         base = os.path.splitext(input_path)[0]
         output_path = f"{base}_processed.tsv"
 
+	df = df.drop_duplicates(subset="Line", keep="first")
+
     df.to_csv(output_path, sep='\t', index=False)
     return output_path
 
@@ -470,7 +481,8 @@ def combine_pheno(input_path,pheno_path, output_path=None):
 	merged_df = pd.merge(Geno, pheno, on='Line', how='left')
 
 	#Reorder columns
-	fixed_cols = ['norm_phe', 'Line', 'BLUEs']
+	#Using BLUE values without normalization
+	fixed_cols = ['BLUEs', 'Line', 'norm_phe']
 	snp_cols = [c for c in merged_df.columns if c not in fixed_cols]
 	# Finalize the DataFrame
 	final_df = merged_df[fixed_cols + snp_cols]
@@ -491,6 +503,18 @@ def  dummy_folds_column(input_path, output_path=None):
 
 	df.to_csv(output_path, sep='\t', index=False)
 	return output_path
+
+def find_kendall_tau(path):
+    df = pd.read_csv(path)
+    df = df.dropna(subset=["predicted", "phenotype"])
+    tau, p = kendalltau( df["predicted"], df["phenotype"])
+    return tau, p
+
+def prediction_error(path):
+	df = pd.read_csv(path)
+	df["Error"] = abs(df["predicted"] - df["phenotype"])
+	new_df= df[["Line", "Error"]]
+	return new_df
 
 if __name__ == '__main__':
 
@@ -526,15 +550,59 @@ if __name__ == '__main__':
 	IMP_input=dummy_folds_column(IMP_input)
 	QA_input=dummy_folds_column(QA_input)
 
+	for i in range(1,11):
+		assign_folds_to_file(IMP_input, seed=i)  # assign new folds
+		sync_folds_column(IMP_input, QA_input)  # sync folds to QA
 
-	assign_folds_to_file(IMP_input)  # assign new folds
-	sync_folds_column(IMP_input, QA_input)  # sync folds to QA
+		if args.summary:
+			run_saliency_summary(IMP_input, QA_input, repeat=i)
+		elif args.fold:
+			main(IMP_input, QA_input, run_fold=args.fold, repeat=i)
+		else:
+			print("🌀 No fold specified — running all folds via run_all_folds.py ...")
+			subprocess.run(['python3', 'run_all_folds.py', IMP_input, QA_input])
+		print(f"Repeat {i} complete")
 
+	#Find average saliency for all repeats and extract top snps
 	if args.summary:
-		run_saliency_summary(IMP_input, QA_input)
-	elif args.fold:
-		main(IMP_input, QA_input, run_fold=args.fold)
-	else:
-		print("🌀 No fold specified — running all folds via run_all_folds.py ...")
-		subprocess.run(['python3', 'run_all_folds.py', IMP_input, QA_input])
- 
+		merged_df = None
+		for i in range(1,11):
+			path = f"Repeat_{i}/top_saliency_snps.csv"
+			df = pd.read_csv(path)
+			# Rename saliency column
+			df.rename(columns={"Saliency": f"Saliency_{i}"}, inplace=True)
+			if merged_df is None:
+				merged_df = df
+			else:
+				merged_df = pd.merge(merged_df, df, on='SNP', how='inner')
+		saliency_cols = [col for col in merged_df.columns if col.startswith("Saliency_")]
+		merged_df["avg_saliency"] = merged_df[saliency_cols].mean(axis=1)
+		export_top_k_saliency(snp_names=merged_df["SNP"], saliency_values= merged_df["avg_saliency"] )
+	# Compute kendall's tau for the experiment
+	tau_df = []
+	for i in range(1,11):
+		path = f"Repeat_{i}/fold_data.csv"
+		tau, p = find_kendall_tau(path)
+		tau_vals = pd.DataFrame({"Repeat": [i], "tau": [tau], "p-value": [p]})
+		tau_df.append(tau_vals)
+	tau_df = pd.concat(tau_df, ignore_index=True)
+	final_tau = tau_df["tau"].mean()
+	std = tau_df["tau"].std()
+	tau_df.to_csv("Kendall_tau.csv", sep='\t', index=False)
+	print(f"The overall tau value is {final_tau:.3f} ± {std:.3f}" )
+
+	#Error statistics
+	Error_df = None
+	for i in range(1, 11):
+		path = f"Repeat_{i}/fold_data.csv"
+		df = prediction_error(path)
+		# Rename saliency column
+		df.rename(columns={"Error": f"Error_{i}"}, inplace=True)
+		if Error_df is None:
+			Error_df = df.copy()
+		else:
+			Error_df = pd.merge(Error_df, df, on='Line', how='inner')
+	Error_cols = [col for col in Error_df.columns if col.startswith("Error_")]
+	Error_df["avg_error"] = Error_df[Error_cols].mean(axis=1)
+	Error_cleaned = Error_df[["Line", "avg_error"]].sort_values(by="avg_error", ascending=True)
+	Error_cleaned.to_csv("Prediction_Error.csv", sep='\t', index=False)

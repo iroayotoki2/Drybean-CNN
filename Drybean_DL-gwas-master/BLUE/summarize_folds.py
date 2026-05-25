@@ -22,7 +22,7 @@ QA_input =  f"{QA_base}_processed.tsv"
 
 
 
-NUM_FOLDS = 10
+NUM_FOLDS = 5
 
 # Load data (again, just for saliency/summary)
 imp_SNP, imp_pheno, folds, snp_names = readData(IMP_input)
