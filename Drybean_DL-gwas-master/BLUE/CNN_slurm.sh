@@ -1,11 +1,9 @@
-#!/bin/bash
-#SBATCH --account=def-cottenie
+#SBATCH --cpus-per-task=8
+#SBATCH --mem=32G
+#SBATCH --time=24:00:00
 #SBATCH --job-name=drybean_blue
 #SBATCH --output=drybean_blue_%j.out
 #SBATCH --error=drybean_blue_%j.err
-#SBATCH --time=24:00:00
-#SBATCH --cpus-per-task=2
-#SBATCH --mem=32G
 
 set -euo pipefail
 
@@ -16,5 +14,8 @@ source ENV/bin/activate
 
 cd ~/scratch/Drybean-CNN/Drybean_DL-gwas-master/BLUE/
 
-python3 BLUE.py imputed_GenotypicData.vcf Raw_GenotypicData.vcf --pheno pheno_normalized.tsv
+export OMP_NUM_THREADS=$SLURM_CPUS_PER_TASK
+export MKL_NUM_THREADS=$SLURM_CPUS_PER_TASK
+export OPENBLAS_NUM_THREADS=$SLURM_CPUS_PER_TASK
 
+python3 BLUE.py imputed_GenotypicData.vcf Raw_GenotypicData.vcf --pheno pheno_normalized.tsv
