@@ -7,6 +7,7 @@ os.environ["OMP_NUM_THREADS"] = "2"
 os.environ["TF_NUM_INTRAOP_THREADS"] = "2"
 os.environ["TF_NUM_INTEROP_THREADS"] = "2"
 import tensorflow as tf
+
 tf.config.threading.set_intra_op_parallelism_threads(2)
 tf.config.threading.set_inter_op_parallelism_threads(2)
 import numpy as np
@@ -23,18 +24,18 @@ import csv
 import argparse
 import subprocess
 import matplotlib
+
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import math as m
 import keras.backend as K
 
-
-os.environ["TF_XLA_FLAGS"] = "--tf_xla_auto_jit=2" #New
-tf.config.set_visible_devices([], 'GPU') #New
+os.environ["TF_XLA_FLAGS"] = "--tf_xla_auto_jit=2"  # New
+tf.config.set_visible_devices([], 'GPU')  # New
 gpus = tf.config.experimental.list_physical_devices('GPU')
 if gpus:
-	for gpu in gpus:
-		tf.config.experimental.set_memory_growth(gpu, True)
+    for gpu in gpus:
+        tf.config.experimental.set_memory_growth(gpu, True)
 
 ##one of K encoding
 
@@ -43,426 +44,441 @@ nb_classes = 4
 
 NUM_FOLDS = 5
 
+
 def assign_folds_to_file(filename, output_filename=None, seed=42):
-	if output_filename is None:
-		output_filename = filename  # Overwrite original
-	
-	df = pd.read_csv(filename, sep='\t')
-	num_samples = len(df)
+    if output_filename is None:
+        output_filename = filename  # Overwrite original
 
-	fold_numbers = np.arange(1, NUM_FOLDS + 1)
+    df = pd.read_csv(filename, sep='\t')
+    num_samples = len(df)
 
-	# Generate new fold assignments
-	np.random.seed(seed)
-	np.random.shuffle(fold_numbers)
-	new_folds = np.tile(fold_numbers, int(np.ceil(num_samples / NUM_FOLDS)))[:num_samples]
-	assert len(new_folds) == num_samples, "Mismatch in fold assignment length!"
+    fold_numbers = np.arange(1, NUM_FOLDS + 1)
 
-	df.iloc[:, 0] = new_folds  # Replace first column with new folds
+    # Generate new fold assignments
+    np.random.seed(seed)
+    np.random.shuffle(fold_numbers)
+    new_folds = np.tile(fold_numbers, int(np.ceil(num_samples / NUM_FOLDS)))[:num_samples]
+    assert len(new_folds) == num_samples, "Mismatch in fold assignment length!"
 
-	# Double check before writing
-	assert len(df) == num_samples, f"Row count changed! Expected {num_samples}, got {len(df)}"
+    df.iloc[:, 0] = new_folds  # Replace first column with new folds
 
-	df.to_csv(output_filename, sep='\t', index=False)
+    # Double check before writing
+    assert len(df) == num_samples, f"Row count changed! Expected {num_samples}, got {len(df)}"
+
+    df.to_csv(output_filename, sep='\t', index=False)
+
 
 def sync_folds_column(source_file, target_file, output_file=None):
-	"""
-	Copy the first column (fold assignment) from source_file to target_file.
-	Optionally write the result to output_file (or overwrite target_file).
-	"""
-	if output_file is None:
-		output_file = target_file
+    """
+    Copy the first column (fold assignment) from source_file to target_file.
+    Optionally write the result to output_file (or overwrite target_file).
+    """
+    if output_file is None:
+        output_file = target_file
 
-	source_df = pd.read_csv(source_file, sep='\t')
-	target_df = pd.read_csv(target_file, sep='\t')
+    source_df = pd.read_csv(source_file, sep='\t')
+    target_df = pd.read_csv(target_file, sep='\t')
 
-	if len(source_df) != len(target_df):
-		raise ValueError(f"Row count mismatch: {source_file} has {len(source_df)}, {target_file} has {len(target_df)}")
+    if len(source_df) != len(target_df):
+        raise ValueError(f"Row count mismatch: {source_file} has {len(source_df)}, {target_file} has {len(target_df)}")
 
-	target_df.iloc[:, 0] = source_df.iloc[:, 0]  # Copy fold column
-	target_df.to_csv(output_file, sep='\t', index=False)
+    target_df.iloc[:, 0] = source_df.iloc[:, 0]  # Copy fold column
+    target_df.to_csv(output_file, sep='\t', index=False)
 
-def indices_to_one_hot(data,nb_classes):
-	
-	targets = np.array(data).reshape(-1)
-	
-	return np.eye(nb_classes)[targets]
+
+def indices_to_one_hot(data, nb_classes):
+    targets = np.array(data).reshape(-1)
+
+    return np.eye(nb_classes)[targets]
+
 
 def predict_height_from_all_folds(snp_vector, model_dir="model_IMP"):
-	one_hot = indices_to_one_hot(snp_vector, nb_classes)
-	one_hot = np.expand_dims(one_hot, axis=0).astype(np.float32)
+    one_hot = indices_to_one_hot(snp_vector, nb_classes)
+    one_hot = np.expand_dims(one_hot, axis=0).astype(np.float32)
 
-	predictions = []
+    predictions = []
 
-	for i in range(1, NUM_FOLDS + 1):
-		model_path = f"{model_dir}/model_{i}.h5"
-		model = load_model(model_path, custom_objects={"isru": isru})
-		model.compile(loss='mean_squared_error', optimizer='adam')
+    for i in range(1, NUM_FOLDS + 1):
+        model_path = f"{model_dir}/model_{i}.h5"
+        model = load_model(model_path, custom_objects={"isru": isru})
+        model.compile(loss='mean_squared_error', optimizer='adam')
 
-		pred = model.predict(one_hot, verbose=0)
-		predictions.append(pred[0][0])
+        pred = model.predict(one_hot, verbose=0)
+        predictions.append(pred[0][0])
 
-	return np.mean(predictions)	
+    return np.mean(predictions)
+
 
 def readData(input):
-	
-	data = pd.read_csv(input,sep='\t',header=0,na_values='nan')
-	snp_df = data.iloc[:, 4:].apply(pd.to_numeric, errors='coerce')
-	SNP = snp_df.values
-	snp_names = snp_df.columns.tolist()
-	pheno = data.iloc[:,1].apply(pd.to_numeric, errors='coerce').values
-	folds = data.iloc[:,0].apply(pd.to_numeric, errors='coerce').values
-	Lines = data.iloc[:,2]
-	#arr = np.empty(shape=(SNP.shape[0],SNP.shape[1] , nb_classes))
-	# arr = np.memmap('snp_encoded.dat', dtype='float32', mode='w+', shape=(SNP.shape[0], SNP.shape[1], nb_classes))
-	
-	# for i in range(0,SNP.shape[0]):
-	# 	arr[i] = indices_to_one_hot(pd.to_numeric(SNP[i],downcast='signed'), nb_classes)
-		
-	return SNP.astype(np.int8), pheno, folds, snp_names , Lines
-	
+    data = pd.read_csv(input, sep='\t', header=0, na_values='nan')
+    snp_df = data.iloc[:, 4:].apply(pd.to_numeric, errors='coerce')
+    SNP = snp_df.values
+    snp_names = snp_df.columns.tolist()
+    pheno = data.iloc[:, 1].apply(pd.to_numeric, errors='coerce').values
+    folds = data.iloc[:, 0].apply(pd.to_numeric, errors='coerce').values
+    Lines = data.iloc[:, 2]
+    # arr = np.empty(shape=(SNP.shape[0],SNP.shape[1] , nb_classes))
+    # arr = np.memmap('snp_encoded.dat', dtype='float32', mode='w+', shape=(SNP.shape[0], SNP.shape[1], nb_classes))
+
+    # for i in range(0,SNP.shape[0]):
+    # 	arr[i] = indices_to_one_hot(pd.to_numeric(SNP[i],downcast='signed'), nb_classes)
+
+    return SNP.astype(np.int8), pheno, folds, snp_names, Lines
+
+
 def resnet(input):
-	
-	inputs = Input(shape=(input.shape[1],nb_classes))
-	
-	
-	x = Conv1D(10,4,padding='same',activation = 'linear',kernel_initializer = 'TruncatedNormal', kernel_regularizer=regularizers.l2(0.1),bias_regularizer = regularizers.l2(0.01))(inputs)
-	
-	x = Conv1D(10,20,padding='same',activation = 'linear', kernel_initializer = 'TruncatedNormal',kernel_regularizer=regularizers.l2(0.1),bias_regularizer = regularizers.l2(0.01))(x)
-		
-	x = Dropout(0.75)(x)
-	
-	shortcut = Conv1D(10,4,padding='same',activation = 'linear',kernel_initializer = 'TruncatedNormal', kernel_regularizer=regularizers.l2(0.1),bias_regularizer = regularizers.l2(0.01))(inputs)
-	x = layers.add([shortcut,x])
-	
-	x = Conv1D(10,4,padding='same',activation = 'linear',kernel_initializer = 'TruncatedNormal', kernel_regularizer=regularizers.l2(0.1),bias_regularizer = regularizers.l2(0.01))(x)
-	
-	x = Dropout(0.75)(x)
-	x = Flatten()(x)
-	
-	x = Dropout(0.75)(x)
-	
-	outputs = Dense(1,activation = isru,bias_regularizer = regularizers.l2(0.01),kernel_initializer = 'TruncatedNormal',name = 'out')(x)
-	
-	model = Model(inputs = inputs,outputs = outputs)
-	model.compile(loss='mean_squared_error', optimizer=keras.optimizers.Adam(learning_rate=0.001), metrics=['mae'])
-	
-	return model	
-	
-def show_images_plot(saliency,wald,outname):
-	
-	plt.figure(figsize=(15, 8), facecolor='w')
-	
-	plt.subplot(2, 1, 1)
-	x = np.median(saliency,axis=-1)
-	plt.plot(x,'b.')
-	line = sorted(x,reverse = True)[10]
-	plt.axhline(y = line,color='b', linestyle='--')
-	plt.ylabel('saliency value', fontdict=None, labelpad=None,fontsize=15)
-	
-	
-	plt.subplot(2, 1, 2)
-	plt.plot(wald,'r1')
-	line = sorted(wald,reverse = True)[10]
-	plt.axhline(y = line,color='r', linestyle='--')
-	
-	plt.xlabel('SNPs', fontdict=None, labelpad=None,fontsize=15)
-	plt.ylabel('Wald', fontdict=None, labelpad=None,fontsize=15)
-	
-	plt.savefig(outname)
-	plt.clf()
-	plt.cla()
-	plt.close()
+    inputs = Input(shape=(input.shape[1], nb_classes))
+
+    x = Conv1D(10, 4, padding='same', activation='linear', kernel_initializer='TruncatedNormal',
+               kernel_regularizer=regularizers.l2(0.1), bias_regularizer=regularizers.l2(0.01))(inputs)
+
+    x = Conv1D(10, 20, padding='same', activation='linear', kernel_initializer='TruncatedNormal',
+               kernel_regularizer=regularizers.l2(0.1), bias_regularizer=regularizers.l2(0.01))(x)
+
+    x = Dropout(0.75)(x)
+
+    shortcut = Conv1D(10, 4, padding='same', activation='linear', kernel_initializer='TruncatedNormal',
+                      kernel_regularizer=regularizers.l2(0.1), bias_regularizer=regularizers.l2(0.01))(inputs)
+    x = layers.add([shortcut, x])
+
+    x = Conv1D(10, 4, padding='same', activation='linear', kernel_initializer='TruncatedNormal',
+               kernel_regularizer=regularizers.l2(0.1), bias_regularizer=regularizers.l2(0.01))(x)
+
+    x = Dropout(0.75)(x)
+    x = Flatten()(x)
+
+    x = Dropout(0.75)(x)
+
+    outputs = Dense(1, activation=isru, bias_regularizer=regularizers.l2(0.01), kernel_initializer='TruncatedNormal',
+                    name='out')(x)
+
+    model = Model(inputs=inputs, outputs=outputs)
+    model.compile(loss='mean_squared_error', optimizer=keras.optimizers.Adam(learning_rate=0.001), metrics=['mae'])
+
+    return model
+
+
+def show_images_plot(saliency, wald, outname):
+    plt.figure(figsize=(15, 8), facecolor='w')
+
+    plt.subplot(2, 1, 1)
+    x = np.median(saliency, axis=-1)
+    plt.plot(x, 'b.')
+    line = sorted(x, reverse=True)[10]
+    plt.axhline(y=line, color='b', linestyle='--')
+    plt.ylabel('saliency value', fontdict=None, labelpad=None, fontsize=15)
+
+    plt.subplot(2, 1, 2)
+    plt.plot(wald, 'r1')
+    line = sorted(wald, reverse=True)[10]
+    plt.axhline(y=line, color='r', linestyle='--')
+
+    plt.xlabel('SNPs', fontdict=None, labelpad=None, fontsize=15)
+    plt.ylabel('Wald', fontdict=None, labelpad=None, fontsize=15)
+
+    plt.savefig(outname)
+    plt.clf()
+    plt.cla()
+    plt.close()
+
 
 def plot_average_saliency(avg_saliency, output_file="avg_saliency_across_folds.png"):
-	plt.figure(figsize=(15, 6))
-	plt.plot(avg_saliency, '.', markersize=3)
-	plt.xlabel("SNP Index")
-	plt.ylabel("Average Saliency")
-	plt.title("Average Saliency per SNP Across All Folds")
-	plt.grid(True)
-	plt.tight_layout()
-	plt.savefig(output_file)
-	plt.close()	
-	
+    plt.figure(figsize=(15, 6))
+    plt.plot(avg_saliency, '.', markersize=3)
+    plt.xlabel("SNP Index")
+    plt.ylabel("Average Saliency")
+    plt.title("Average Saliency per SNP Across All Folds")
+    plt.grid(True)
+    plt.tight_layout()
+    plt.savefig(output_file)
+    plt.close()
+
+
 def get_saliency(input_tensor, model):
-	"""
-	Compute saliency map using TensorFlow GradientTape.
-	Args:
-		input_tensor: one-hot encoded SNPs for a single sample (shape: [num_SNPs, 4])
-		model: trained Keras model
-	Returns:
-		saliency: np.array of shape (num_SNPs,) with max gradient across channels
-	"""
-	input_tensor = tf.convert_to_tensor(np.expand_dims(input_tensor, axis=0))  # shape: (1, num_SNPs, 4)
-	input_tensor = tf.cast(input_tensor, tf.float32)
+    """
+    Compute saliency map using TensorFlow GradientTape.
+    Args:
+        input_tensor: one-hot encoded SNPs for a single sample (shape: [num_SNPs, 4])
+        model: trained Keras model
+    Returns:
+        saliency: np.array of shape (num_SNPs,) with max gradient across channels
+    """
+    input_tensor = tf.convert_to_tensor(np.expand_dims(input_tensor, axis=0))  # shape: (1, num_SNPs, 4)
+    input_tensor = tf.cast(input_tensor, tf.float32)
 
-	with tf.GradientTape() as tape:
-		tape.watch(input_tensor)
-		prediction = model(input_tensor, training=False)  # shape: (1, 1)
+    with tf.GradientTape() as tape:
+        tape.watch(input_tensor)
+        prediction = model(input_tensor, training=False)  # shape: (1, 1)
 
-	gradient = tape.gradient(prediction, input_tensor)  # shape: (1, num_SNPs, 4)
-	saliency = tf.reduce_max(tf.abs(gradient), axis=-1)  # max across classes
-	return saliency.numpy().squeeze()  # shape: (num_SNPs,)
+    gradient = tape.gradient(prediction, input_tensor)  # shape: (1, num_SNPs, 4)
+    saliency = tf.reduce_max(tf.abs(gradient), axis=-1)  # max across classes
+    return saliency.numpy().squeeze()  # shape: (num_SNPs,)
 
-def export_top_k_saliency(snp_names, saliency_values, k=20, output_file="top_saliency_snps.csv", repeat = 0):
-	# Sort SNPs by saliency (descending)
-	top_indices = np.argsort(saliency_values)[::-1][:k]
-	top_snps = [(snp_names[i], saliency_values[i]) for i in top_indices]
-	if repeat != 0:
-		output_file =  f"Repeat_{repeat}/{output_file}"
-	# Write to CSV
-	with open(output_file, mode='w', newline='') as file:
-		writer = csv.writer(file)
-		writer.writerow(["SNP", "Saliency"])
-		for snp, score in top_snps:
-			writer.writerow([snp, f"{score:.6f}"])
-	print(f"📁 Top {k} SNPs by saliency saved to '{output_file}'")
+
+def export_top_k_saliency(snp_names, saliency_values, k=20, output_file="top_saliency_snps.csv", repeat=0):
+    # Sort SNPs by saliency (descending)
+    top_indices = np.argsort(saliency_values)[::-1][:k]
+    top_snps = [(snp_names[i], saliency_values[i]) for i in top_indices]
+    if repeat != 0:
+        output_file = f"Repeat_{repeat}/{output_file}"
+    # Write to CSV
+    with open(output_file, mode='w', newline='') as file:
+        writer = csv.writer(file)
+        writer.writerow(["SNP", "Saliency"])
+        for snp, score in top_snps:
+            writer.writerow([snp, f"{score:.6f}"])
+    print(f"📁 Top {k} SNPs by saliency saved to '{output_file}'")
+
 
 def collect_saliency_across_folds(imp_SNP, imp_pheno, folds, repeat):
-	all_saliencies = []
+    all_saliencies = []
 
-	for i in range(1, NUM_FOLDS + 1):
-		print(f"Processing Repeat {repeat} fold {i}...")
+    for i in range(1, NUM_FOLDS + 1):
+        print(f"Processing Repeat {repeat} fold {i}...")
 
-		# Load the trained model for this fold
-		model_path = f"Repeat_{repeat}/model_IMP/model_{i}.h5"
-		model = load_model(model_path, custom_objects={"isru": isru})
-		model.compile(loss='mean_squared_error', optimizer='adam')
+        # Load the trained model for this fold
+        model_path = f"Repeat_{repeat}/model_IMP/model_{i}.h5"
+        model = load_model(model_path, custom_objects={"isru": isru})
+        model.compile(loss='mean_squared_error', optimizer='adam')
 
-		# Get test indices for this fold
-		test_idx = np.where(folds == i)[0]
+        # Get test indices for this fold
+        test_idx = np.where(folds == i)[0]
 
-		# Compute saliency for each test sample
-		for idx in test_idx:
-			snp_vector = indices_to_one_hot(imp_SNP[idx], nb_classes).astype(np.float32)
-			sal = get_saliency(snp_vector, model)
-			all_saliencies.append(sal)
+        # Compute saliency for each test sample
+        for idx in test_idx:
+            snp_vector = indices_to_one_hot(imp_SNP[idx], nb_classes).astype(np.float32)
+            sal = get_saliency(snp_vector, model)
+            all_saliencies.append(sal)
 
-	print("Finished collecting saliency data from all folds.")
-	return np.mean(np.stack(all_saliencies), axis=0)  # shape: (num_SNPs,)
+    print("Finished collecting saliency data from all folds.")
+    return np.mean(np.stack(all_saliencies), axis=0)  # shape: (num_SNPs,)
 
-a= 0.03  #height
+
+a = 0.03  # height
+
 
 def isru(x):
-	return  x / (tf.math.sqrt(1 + a * tf.math.square(x)))
+    return x / (tf.math.sqrt(1 + a * tf.math.square(x)))
+
 
 class SNPGenerator(tf.keras.utils.Sequence):
-	def __init__(self, SNP, labels, batch_size, **kwargs):
-		super().__init__(**kwargs)
-		self.SNP = SNP
-		self.labels = labels
-		self.batch_size = batch_size
+    def __init__(self, SNP, labels, batch_size, **kwargs):
+        super().__init__(**kwargs)
+        self.SNP = SNP
+        self.labels = labels
+        self.batch_size = batch_size
 
-	def __len__(self):
-		return int(np.ceil(len(self.SNP) / self.batch_size))
+    def __len__(self):
+        return int(np.ceil(len(self.SNP) / self.batch_size))
 
-	def __getitem__(self, idx):
-		batch_x = self.SNP[idx * self.batch_size:(idx + 1) * self.batch_size]
-		batch_y = self.labels[idx * self.batch_size:(idx + 1) * self.batch_size]
-		batch_encoded = np.array([indices_to_one_hot(x, nb_classes) for x in batch_x], dtype=np.float32)
-		return batch_encoded, batch_y
+    def __getitem__(self, idx):
+        batch_x = self.SNP[idx * self.batch_size:(idx + 1) * self.batch_size]
+        batch_y = self.labels[idx * self.batch_size:(idx + 1) * self.batch_size]
+        batch_encoded = np.array([indices_to_one_hot(x, nb_classes) for x in batch_x], dtype=np.float32)
+        return batch_encoded, batch_y
+
 
 def model_train(testSNP, valSNP, trainSNP, testPheno, valPheno, trainPheno, model_save, weights_save):
-	batch_size = 4
-	early_stopping = keras.callbacks.EarlyStopping(monitor='val_mae', patience=10, mode='min')
+    batch_size = 4
+    early_stopping = keras.callbacks.EarlyStopping(monitor='val_mae', patience=10, mode='min')
 
-	model = resnet(trainSNP)
+    model = resnet(trainSNP)
 
-	# Use generators for training and validation
-	train_gen = SNPGenerator(trainSNP, trainPheno, batch_size)
-	val_gen = SNPGenerator(valSNP, valPheno, batch_size)
+    # Use generators for training and validation
+    train_gen = SNPGenerator(trainSNP, trainPheno, batch_size)
+    val_gen = SNPGenerator(valSNP, valPheno, batch_size)
 
-	history = model.fit(
-		train_gen,
-		epochs=1000,
-		validation_data=val_gen,
-		callbacks=[early_stopping],
-		shuffle=True,
-		verbose=1
-	)
+    history = model.fit(
+        train_gen,
+        epochs=1000,
+        validation_data=val_gen,
+        callbacks=[early_stopping],
+        shuffle=True,
+        verbose=1
+    )
 
-	model.save(model_save)
-	model.save_weights(weights_save)
+    model.save(model_save)
+    model.save_weights(weights_save)
 
-	# Test set: one-hot encode manually
-	test_encoded = np.array([indices_to_one_hot(x, nb_classes) for x in testSNP], dtype=np.float32)
-	pred = model.predict(test_encoded)
-	pred = pred.flatten()
+    # Test set: one-hot encode manually
+    test_encoded = np.array([indices_to_one_hot(x, nb_classes) for x in testSNP], dtype=np.float32)
+    pred = model.predict(test_encoded)
+    pred = pred.flatten()
 
-	corr = pearsonr(pred, testPheno)[0]
-	return history, pred, corr
-	
+    corr = pearsonr(pred, testPheno)[0]
+    return history, pred, corr
+
+
 def safe_delete(*varnames):
-	for name in varnames:
-		if name in locals():
-			del locals()[name]
-		elif name in globals():
-			del globals()[name]
+    for name in varnames:
+        if name in locals():
+            del locals()[name]
+        elif name in globals():
+            del globals()[name]
+
 
 def run_saliency_summary(IMP_input, QA_input, repeat):
-	imp_SNP, imp_pheno, folds, snp_names, _ = readData(IMP_input)
+    imp_SNP, imp_pheno, folds, snp_names, _ = readData(IMP_input)
 
-	avg_saliency = collect_saliency_across_folds(imp_SNP, imp_pheno, folds, repeat)
-	plot_average_saliency(avg_saliency)
+    avg_saliency = collect_saliency_across_folds(imp_SNP, imp_pheno, folds, repeat)
+    plot_average_saliency(avg_saliency)
 
-	# After folds are run
-	if os.path.exists("fold_pcc_log.csv"):
-		df = pd.read_csv("fold_pcc_log.csv", header=None, names=["Repeat", "Fold", "PCC_Imputed", "PCC_NonImputed"])
-		df = df.sort_values(["Repeat", "Fold"])
-		df.to_csv("fold_pcc_summary.csv", index=False)
+    # After folds are run
+    if os.path.exists("fold_pcc_log.csv"):
+        df = pd.read_csv("fold_pcc_log.csv", header=None, names=["Repeat", "Fold", "PCC_Imputed", "PCC_NonImputed"])
+        df = df.sort_values(["Repeat", "Fold"])
+        df.to_csv("fold_pcc_summary.csv", index=False)
 
-		print("✅ Summary CSV generated: fold_pcc_summary.csv")
-		print("📈 Average PCC (imputed):", round(df['PCC_Imputed'].mean(), 4))
-		print("📈 Average PCC (non-imputed):", round(df['PCC_NonImputed'].mean(), 4))
-	else:
-		print("❌ PCC log not found. Did folds run correctly?")
-	
-	print("✅ Average saliency map and plot generated.")
+        print("✅ Summary CSV generated: fold_pcc_summary.csv")
+        print("📈 Average PCC (imputed):", round(df['PCC_Imputed'].mean(), 4))
+        print("📈 Average PCC (non-imputed):", round(df['PCC_NonImputed'].mean(), 4))
+    else:
+        print("❌ PCC log not found. Did folds run correctly?")
 
-	# SNP saliency viewer
-	test_idx = np.where(folds == 1)[0]
-	sample = indices_to_one_hot(imp_SNP[test_idx[0]], nb_classes).astype(np.float32)
+    print("✅ Average saliency map and plot generated.")
 
-	saliency_maps = []
-	for i in range(1, NUM_FOLDS + 1):
-		model_path = f"Repeat_{repeat}/model_IMP/model_{i}.h5"
-		model = load_model(model_path, custom_objects={"isru": isru})
-		model.compile(loss='mean_squared_error', optimizer='adam')
+    # SNP saliency viewer
+    test_idx = np.where(folds == 1)[0]
+    sample = indices_to_one_hot(imp_SNP[test_idx[0]], nb_classes).astype(np.float32)
 
-		sal = get_saliency(sample, model)
-		saliency_maps.append(sal)
+    saliency_maps = []
+    for i in range(1, NUM_FOLDS + 1):
+        model_path = f"Repeat_{repeat}/model_IMP/model_{i}.h5"
+        model = load_model(model_path, custom_objects={"isru": isru})
+        model.compile(loss='mean_squared_error', optimizer='adam')
 
-	avg_saliency_map = np.mean(np.stack(saliency_maps), axis=0)
-	export_top_k_saliency(snp_names, avg_saliency_map, k= len(snp_names), repeat= repeat)
+        sal = get_saliency(sample, model)
+        saliency_maps.append(sal)
 
-	# Interactive SNP viewer
-	while True:
-		snp_query = input("Enter SNP name to view saliency (or type 'q' to quit): ")
-		if snp_query.lower() in ['q', 'quit', 'exit']:
-			break
+    avg_saliency_map = np.mean(np.stack(saliency_maps), axis=0)
+    export_top_k_saliency(snp_names, avg_saliency_map, k=len(snp_names), repeat=repeat)
 
-		try:
-			idx = snp_names.index(snp_query)
-			print(f"🔬 Average saliency for {snp_query}: {avg_saliency_map[idx]:.6f}\n")
-		except ValueError:
-			print("❌ SNP not found. Please check the name and try again.\n")
+    # Interactive SNP viewer
+    while True:
+        snp_query = input("Enter SNP name to view saliency (or type 'q' to quit): ")
+        if snp_query.lower() in ['q', 'quit', 'exit']:
+            break
+
+        try:
+            idx = snp_names.index(snp_query)
+            print(f"🔬 Average saliency for {snp_query}: {avg_saliency_map[idx]:.6f}\n")
+        except ValueError:
+            print("❌ SNP not found. Please check the name and try again.\n")
+
 
 def main(IMP_input, QA_input, repeat, run_fold=None):
-	IMP_corr = []
-	QA_corr = []
+    IMP_corr = []
+    QA_corr = []
 
-	# Load data once
-	imp_SNP, imp_pheno, folds, snp_names, Lines = readData(IMP_input)
-	QA_SNP, QA_pheno, folds, _, _ = readData(QA_input)
-	PHENOTYPE = imp_pheno
+    # Load data once
+    imp_SNP, imp_pheno, folds, snp_names, Lines = readData(IMP_input)
+    QA_SNP, QA_pheno, folds, _, _ = readData(QA_input)
+    PHENOTYPE = imp_pheno
+
+    # If a specific fold is requested, just run that one; otherwise run all
+    fold_range = [run_fold] if run_fold else range(1, NUM_FOLDS + 1)
+    sv_data = []
+    for i in fold_range:
+        print(f"\n🔁 Starting Repeat{repeat}fold {i} ...")
+
+        # Identify test fold
+        testIdx = np.where(folds == i)[0]
+
+        # If NUM_FOLDS >= 3, use separate fold for validation
+        if NUM_FOLDS >= 3:
+            val_fold = (i % NUM_FOLDS) + 1
+            valIdx = np.where(folds == val_fold)[0]
+            trainIdx = np.where((folds != i) & (folds != val_fold))[0]
+        else:
+            # With 2 folds: split the other fold randomly into train/val
+            other_idx = np.where(folds != i)[0]
+            np.random.seed(repeat)
+            np.random.shuffle(other_idx)
+            val_size = int(0.2 * len(other_idx))
+            valIdx = other_idx[:val_size]
+            trainIdx = other_idx[val_size:]
+
+        if len(trainIdx) == 0 or len(valIdx) == 0:
+            raise ValueError(f"Fold {i}: Training or validation set is empty. Check NUM_FOLDS or data distribution.")
+
+        # Partition data
+        trainSNP, trainSNP_QA, trainPheno = imp_SNP[trainIdx], QA_SNP[trainIdx], PHENOTYPE[trainIdx]
+        valSNP, valSNP_QA, valPheno = imp_SNP[valIdx], QA_SNP[valIdx], PHENOTYPE[valIdx]
+        testSNP, testSNP_QA, testPheno, testLines = imp_SNP[testIdx], QA_SNP[testIdx], PHENOTYPE[testIdx], Lines[
+            testIdx]
+
+        # Train and evaluate on imputed data
+        history, pred, corr = model_train(
+            testSNP, valSNP, trainSNP, testPheno, valPheno, trainPheno,
+            f'Repeat_{repeat}/model_IMP/model_{i}.h5',
+            f'Repeat_{repeat}/model_IMP/model_weights{i}.weights.h5'
+        )
+        IMP_corr.append(float(f'{corr:.4f}'))
+        print(f"✅ Fold {i} (imputed) PCC: {corr:.4f}")
+        fold_pred = pd.DataFrame({"fold": i, "Line": testLines, "predicted": pred, "phenotype": testPheno})
+        sv_data.append(fold_pred)
+
+        # Train and evaluate on non-imputed data
+        history, _, corr = model_train(
+            testSNP_QA, valSNP_QA, trainSNP_QA, testPheno, valPheno, trainPheno,
+            f'Repeat_{repeat}/model_QA/model_{i}.h5',
+            f'Repeat_{repeat}/model_QA/model_weights{i}.weights.h5'
+        )
+        QA_corr.append(float(f'{corr:.4f}'))
+        print(f"✅ Fold {i} (non-imputed) PCC: {corr:.4f}")
+
+        # 🧹 Clear memory
+        from keras import backend as K
+        import gc
+        K.clear_session()
+        gc.collect()
+
+    sv_data = pd.concat(sv_data, ignore_index=True)
+    sv_data.to_csv(f"Repeat_{repeat}/fold_data.csv", index=False)
+
+    if run_fold is not None:
+        with open("fold_pcc_log.csv", "a", newline="") as file:
+            writer = csv.writer(file)
+            writer.writerow([repeat, run_fold, IMP_corr[0], QA_corr[0]])
+            print(f"✅ Saved fold {run_fold} to fold_pcc_log.csv")
+
+    if run_fold is None:
+        with open("fold_pcc_summary.csv", mode="w", newline="") as file:
+            writer = csv.writer(file)
+            writer.writerow(["Repeat", "Fold", "PCC_Imputed", "PCC_NonImputed"])
+            for i in range(NUM_FOLDS):
+                writer.writerow([i + 1, IMP_corr[i], QA_corr[i]])
 
 
-	# If a specific fold is requested, just run that one; otherwise run all
-	fold_range = [run_fold] if run_fold else range(1, NUM_FOLDS + 1)
-	sv_data = []
-	for i in fold_range:
-		print(f"\n🔁 Starting Repeat{repeat}fold {i} ...")
+def vcf_preprocessing(IMP_input, output_path=None):
+    from pysam import VariantFile
+    vcf = VariantFile(IMP_input)
+    data = []
+    index = []
 
-		# Identify test fold
-		testIdx = np.where(folds == i)[0]
+    for record in vcf:
+        index.append(f"{record.chrom}_{record.pos}")
 
-		# If NUM_FOLDS >= 3, use separate fold for validation
-		if NUM_FOLDS >= 3:
-			val_fold = (i % NUM_FOLDS) + 1
-			valIdx = np.where(folds == val_fold)[0]
-			trainIdx = np.where((folds != i) & (folds != val_fold))[0]
-		else:
-			# With 2 folds: split the other fold randomly into train/val
-			other_idx = np.where(folds != i)[0]
-			np.random.seed(repeat)
-			np.random.shuffle(other_idx)
-			val_size = int(0.2 * len(other_idx))
-			valIdx = other_idx[:val_size]
-			trainIdx = other_idx[val_size:]
+        gts = [sum(s['GT']) if s['GT'] and None not in s['GT'] else int(-1)
+               for s in record.samples.values()]
 
-		if len(trainIdx) == 0 or len(valIdx) == 0:
-			raise ValueError(f"Fold {i}: Training or validation set is empty. Check NUM_FOLDS or data distribution.")
+        data.append(gts)
+    # Create the final DataFrame
+    df = pd.DataFrame(data, index=index, columns=list(vcf.header.samples))
+    df_T = df.T
+    df_final = df_T.reset_index().rename(columns={'index': 'Line'})
+    df_final['Line'] = df_final['Line'].str.replace(r'\.\d+$', '', regex=True)
 
-		# Partition data
-		trainSNP, trainSNP_QA, trainPheno = imp_SNP[trainIdx], QA_SNP[trainIdx], PHENOTYPE[trainIdx]
-		valSNP, valSNP_QA, valPheno = imp_SNP[valIdx], QA_SNP[valIdx], PHENOTYPE[valIdx]
-		testSNP, testSNP_QA, testPheno, testLines = imp_SNP[testIdx], QA_SNP[testIdx], PHENOTYPE[testIdx], Lines[testIdx]
+    df_final = df_final.drop_duplicates(subset="Line", keep="first")
+    if output_path is None:
+        base = os.path.splitext(IMP_input)[0]
+        output_path = f"{base}_processed.tsv"
 
-		# Train and evaluate on imputed data
-		history, pred, corr = model_train(
-			testSNP, valSNP, trainSNP, testPheno, valPheno, trainPheno,
-			f'Repeat_{repeat}/model_IMP/model_{i}.h5',
-			f'Repeat_{repeat}/model_IMP/model_weights{i}.weights.h5'
-		)
-		IMP_corr.append(float(f'{corr:.4f}'))
-		print(f"✅ Fold {i} (imputed) PCC: {corr:.4f}")
-		fold_pred = pd.DataFrame({"fold": i, "Line": testLines,  "predicted": pred, "phenotype": testPheno })
-		sv_data.append(fold_pred)
+    df_final.to_csv(output_path, sep='\t', index=False)
+    return output_path
 
-		# Train and evaluate on non-imputed data
-		history, _, corr = model_train(
-			testSNP_QA, valSNP_QA, trainSNP_QA, testPheno, valPheno, trainPheno,
-			f'Repeat_{repeat}/model_QA/model_{i}.h5',
-			f'Repeat_{repeat}/model_QA/model_weights{i}.weights.h5'
-		)
-		QA_corr.append(float(f'{corr:.4f}'))
-		print(f"✅ Fold {i} (non-imputed) PCC: {corr:.4f}")
-
-		# 🧹 Clear memory
-		from keras import backend as K
-		import gc
-		K.clear_session()
-		gc.collect()
-
-	sv_data = pd.concat(sv_data, ignore_index=True)
-	sv_data.to_csv(f"Repeat_{repeat}/fold_data.csv", index=False)
-
-	if run_fold is not None:
-		with open("fold_pcc_log.csv", "a", newline="") as file:
-			writer = csv.writer(file)
-			writer.writerow([repeat, run_fold, IMP_corr[0], QA_corr[0]])
-			print(f"✅ Saved fold {run_fold} to fold_pcc_log.csv")
-
-	if run_fold is None:
-		with open("fold_pcc_summary.csv", mode="w", newline="") as file:
-			writer = csv.writer(file)
-			writer.writerow(["Repeat", "Fold", "PCC_Imputed", "PCC_NonImputed"])
-			for i in range(NUM_FOLDS):
-				writer.writerow([i + 1, IMP_corr[i], QA_corr[i]])
-
-
-
-def vcf_preprocessing(IMP_input, output_path =None):
-	from pysam import VariantFile
-	vcf = VariantFile(IMP_input)
-	data = []
-	index = []
-
-	for record in vcf:
-		index.append(f"{record.chrom}_{record.pos}")
-
-		gts = [sum(s['GT']) if s['GT'] and None not in s['GT'] else int(-1)
-		       for s in record.samples.values()]
-
-		data.append(gts)
-	# Create the final DataFrame
-	df = pd.DataFrame(data, index=index, columns=list(vcf.header.samples))
-	df_T = df.T
-	df_final = df_T.reset_index().rename(columns={'index': 'Line'})
-	df_final['Line'] = df_final['Line'].str.replace(r'\.\d+$', '', regex=True)
-
-	df_final = df_final.drop_duplicates(subset="Line", keep="first")
-	if output_path is None:
-		base = os.path.splitext(IMP_input)[0]
-		output_path = f"{base}_processed.tsv"
-
-	df_final.to_csv(output_path, sep='\t', index=False)
-	return output_path
 
 def csv_preprocessing(input_path, output_path=None):
-
-
     df = pd.read_csv(input_path)
     df.drop(df.columns[0], inplace=True, axis=1)
 
@@ -470,139 +486,143 @@ def csv_preprocessing(input_path, output_path=None):
         base = os.path.splitext(input_path)[0]
         output_path = f"{base}_processed.tsv"
 
-	df = df.drop_duplicates(subset="Line", keep="first")
+        df = df.drop_duplicates(subset="Line", keep="first")
 
     df.to_csv(output_path, sep='\t', index=False)
     return output_path
 
-def combine_pheno(input_path,pheno_path, output_path=None):
-	Geno = pd.read_csv(input_path, sep='\t')
-	pheno = pd.read_csv(pheno_path, sep='\t')
-	merged_df = pd.merge(Geno, pheno, on='Line', how='left')
 
-	#Reorder columns
-	#Using BLUE values without normalization
-	fixed_cols = ['BLUEs', 'Line', 'norm_phe']
-	snp_cols = [c for c in merged_df.columns if c not in fixed_cols]
-	# Finalize the DataFrame
-	final_df = merged_df[fixed_cols + snp_cols]
+def combine_pheno(input_path, pheno_path, output_path=None):
+    Geno = pd.read_csv(input_path, sep='\t')
+    pheno = pd.read_csv(pheno_path, sep='\t')
+    merged_df = pd.merge(Geno, pheno, on='Line', how='left')
 
-	if output_path is None:
-		output_path = input_path
+    # Reorder columns
+    # Using BLUE values without normalization
+    fixed_cols = ['BLUEs', 'Line', 'norm_phe']
+    snp_cols = [c for c in merged_df.columns if c not in fixed_cols]
+    # Finalize the DataFrame
+    final_df = merged_df[fixed_cols + snp_cols]
 
-	final_df.to_csv(output_path, sep='\t', index=False)
-	return output_path
+    if output_path is None:
+        output_path = input_path
 
-def  dummy_folds_column(input_path, output_path=None):
-	df = pd.read_csv(input_path, sep='\t')
-	if 'folds' not in df.columns:
-		df.insert(0,'folds',0)
+    final_df.to_csv(output_path, sep='\t', index=False)
+    return output_path
 
-	if output_path is None:
-		output_path = input_path
 
-	df.to_csv(output_path, sep='\t', index=False)
-	return output_path
+def dummy_folds_column(input_path, output_path=None):
+    df = pd.read_csv(input_path, sep='\t')
+    if 'folds' not in df.columns:
+        df.insert(0, 'folds', 0)
+
+    if output_path is None:
+        output_path = input_path
+
+    df.to_csv(output_path, sep='\t', index=False)
+    return output_path
+
 
 def find_kendall_tau(path):
     df = pd.read_csv(path)
     df = df.dropna(subset=["predicted", "phenotype"])
-    tau, p = kendalltau( df["predicted"], df["phenotype"])
+    tau, p = kendalltau(df["predicted"], df["phenotype"])
     return tau, p
 
+
 def prediction_error(path):
-	df = pd.read_csv(path)
-	df["Error"] = abs(df["predicted"] - df["phenotype"])
-	new_df= df[["Line", "Error"]]
-	return new_df
+    df = pd.read_csv(path)
+    df["Error"] = abs(df["predicted"] - df["phenotype"])
+    new_df = df[["Line", "Error"]]
+    return new_df
+
 
 if __name__ == '__main__':
 
-	#os.chdir("MOISTURE")
+    # os.chdir("MOISTURE")
 
-	parser = argparse.ArgumentParser()
-	parser.add_argument('IMP_file', help="Imputed file")
-	parser.add_argument('QA_file', help="QA file")
-	parser.add_argument('--pheno', help="Phenotype file")
-	parser.add_argument('--fold', type=int, default=None, help="Fold number (1–10)")
-	parser.add_argument('--summary', action='store_true', help="Run saliency summary after all folds")
-	args = parser.parse_args()
+    parser = argparse.ArgumentParser()
+    parser.add_argument('IMP_file', help="Imputed file")
+    parser.add_argument('QA_file', help="QA file")
+    parser.add_argument('--pheno', help="Phenotype file")
+    parser.add_argument('--fold', type=int, default=None, help="Fold number (1–10)")
+    parser.add_argument('--summary', action='store_true', help="Run saliency summary after all folds")
+    args = parser.parse_args()
 
-	IMP_input = args.IMP_file
-	QA_input = args.QA_file
-	#Data cleaning by file format to produce tsvs for the pipline
-	if IMP_input.endswith(".vcf"):
-		IMP_input= vcf_preprocessing(IMP_input)
-	elif IMP_input.endswith(".csv"):
-		IMP_input = csv_preprocessing(IMP_input)
+    IMP_input = args.IMP_file
+    QA_input = args.QA_file
+    # Data cleaning by file format to produce tsvs for the pipline
+    if IMP_input.endswith(".vcf"):
+        IMP_input = vcf_preprocessing(IMP_input)
+    elif IMP_input.endswith(".csv"):
+        IMP_input = csv_preprocessing(IMP_input)
 
+    if QA_input.endswith(".vcf"):
+        QA_input = vcf_preprocessing(QA_input)
+    elif QA_input.endswith(".csv"):
+        QA_input = csv_preprocessing(QA_input)
+    # Add normalized and raw phenotypes
+    if args.pheno:
+        pheno_path = args.pheno
+        IMP_input = combine_pheno(IMP_input, pheno_path)
+        QA_input = combine_pheno(QA_input, pheno_path)
+    # Add empty fold column if absent
+    IMP_input = dummy_folds_column(IMP_input)
+    QA_input = dummy_folds_column(QA_input)
 
-	if QA_input.endswith(".vcf"):
-		QA_input= vcf_preprocessing(QA_input)
-	elif QA_input.endswith(".csv"):
-		QA_input = csv_preprocessing(QA_input)
-	#Add normalized and raw phenotypes
-	if args.pheno:
-		pheno_path = args.pheno
-		IMP_input = combine_pheno(IMP_input, pheno_path)
-		QA_input = combine_pheno(QA_input, pheno_path)
-	#Add empty fold column if absent
-	IMP_input=dummy_folds_column(IMP_input)
-	QA_input=dummy_folds_column(QA_input)
+    for i in range(1, 11):
+        assign_folds_to_file(IMP_input, seed=i)  # assign new folds
+        sync_folds_column(IMP_input, QA_input)  # sync folds to QA
 
-	for i in range(1,11):
-		assign_folds_to_file(IMP_input, seed=i)  # assign new folds
-		sync_folds_column(IMP_input, QA_input)  # sync folds to QA
+        if args.summary:
+            run_saliency_summary(IMP_input, QA_input, repeat=i)
+        elif args.fold:
+            main(IMP_input, QA_input, repeat=i, run_fold=args.fold)
+        else:
+            print("🌀 No fold specified — running all folds via run_all_folds.py ...")
+            subprocess.run(['python3', 'run_all_folds.py', IMP_input, QA_input])
+        print(f"Repeat {i} complete")
 
-		if args.summary:
-			run_saliency_summary(IMP_input, QA_input, repeat=i)
-		elif args.fold:
-			main(IMP_input, QA_input, repeat=i, run_fold=args.fold)
-		else:
-			print("🌀 No fold specified — running all folds via run_all_folds.py ...")
-			subprocess.run(['python3', 'run_all_folds.py', IMP_input, QA_input])
-		print(f"Repeat {i} complete")
+    # Find average saliency for all repeats and extract top snps
+    if args.summary:
+        merged_df = None
+        for i in range(1, 11):
+            path = f"Repeat_{i}/top_saliency_snps.csv"
+            df = pd.read_csv(path)
+            # Rename saliency column
+            df.rename(columns={"Saliency": f"Saliency_{i}"}, inplace=True)
+            if merged_df is None:
+                merged_df = df
+            else:
+                merged_df = pd.merge(merged_df, df, on='SNP', how='inner')
+        saliency_cols = [col for col in merged_df.columns if col.startswith("Saliency_")]
+        merged_df["avg_saliency"] = merged_df[saliency_cols].mean(axis=1)
+        export_top_k_saliency(snp_names=merged_df["SNP"], saliency_values=merged_df["avg_saliency"])
+    # Compute kendall's tau for the experiment
+    tau_df = []
+    for i in range(1, 11):
+        path = f"Repeat_{i}/fold_data.csv"
+        tau, p = find_kendall_tau(path)
+        tau_vals = pd.DataFrame({"Repeat": [i], "tau": [tau], "p-value": [p]})
+        tau_df.append(tau_vals)
+    tau_df = pd.concat(tau_df, ignore_index=True)
+    final_tau = tau_df["tau"].mean()
+    std = tau_df["tau"].std()
+    tau_df.to_csv("Kendall_tau.csv", sep='\t', index=False)
+    print(f"The overall tau value is {final_tau:.3f} ± {std:.3f}")
 
-	#Find average saliency for all repeats and extract top snps
-	if args.summary:
-		merged_df = None
-		for i in range(1,11):
-			path = f"Repeat_{i}/top_saliency_snps.csv"
-			df = pd.read_csv(path)
-			# Rename saliency column
-			df.rename(columns={"Saliency": f"Saliency_{i}"}, inplace=True)
-			if merged_df is None:
-				merged_df = df
-			else:
-				merged_df = pd.merge(merged_df, df, on='SNP', how='inner')
-		saliency_cols = [col for col in merged_df.columns if col.startswith("Saliency_")]
-		merged_df["avg_saliency"] = merged_df[saliency_cols].mean(axis=1)
-		export_top_k_saliency(snp_names=merged_df["SNP"], saliency_values= merged_df["avg_saliency"] )
-	# Compute kendall's tau for the experiment
-	tau_df = []
-	for i in range(1,11):
-		path = f"Repeat_{i}/fold_data.csv"
-		tau, p = find_kendall_tau(path)
-		tau_vals = pd.DataFrame({"Repeat": [i], "tau": [tau], "p-value": [p]})
-		tau_df.append(tau_vals)
-	tau_df = pd.concat(tau_df, ignore_index=True)
-	final_tau = tau_df["tau"].mean()
-	std = tau_df["tau"].std()
-	tau_df.to_csv("Kendall_tau.csv", sep='\t', index=False)
-	print(f"The overall tau value is {final_tau:.3f} ± {std:.3f}" )
-
-	#Error statistics
-	Error_df = None
-	for i in range(1, 11):
-		path = f"Repeat_{i}/fold_data.csv"
-		df = prediction_error(path)
-		# Rename saliency column
-		df.rename(columns={"Error": f"Error_{i}"}, inplace=True)
-		if Error_df is None:
-			Error_df = df.copy()
-		else:
-			Error_df = pd.merge(Error_df, df, on='Line', how='inner')
-	Error_cols = [col for col in Error_df.columns if col.startswith("Error_")]
-	Error_df["avg_error"] = Error_df[Error_cols].mean(axis=1)
-	Error_cleaned = Error_df[["Line", "avg_error"]].sort_values(by="avg_error", ascending=True)
-	Error_cleaned.to_csv("Prediction_Error.csv", sep='\t', index=False)
+    # Error statistics
+    Error_df = None
+    for i in range(1, 11):
+        path = f"Repeat_{i}/fold_data.csv"
+        df = prediction_error(path)
+        # Rename saliency column
+        df.rename(columns={"Error": f"Error_{i}"}, inplace=True)
+        if Error_df is None:
+            Error_df = df.copy()
+        else:
+            Error_df = pd.merge(Error_df, df, on='Line', how='inner')
+    Error_cols = [col for col in Error_df.columns if col.startswith("Error_")]
+    Error_df["avg_error"] = Error_df[Error_cols].mean(axis=1)
+    Error_cleaned = Error_df[["Line", "avg_error"]].sort_values(by="avg_error", ascending=True)
+    Error_cleaned.to_csv("Prediction_Error.csv", sep='\t', index=False)
