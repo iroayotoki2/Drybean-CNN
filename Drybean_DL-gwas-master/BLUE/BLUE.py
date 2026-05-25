@@ -334,7 +334,7 @@ def run_saliency_summary(IMP_input, QA_input, repeat):
 		saliency_maps.append(sal)
 
 	avg_saliency_map = np.mean(np.stack(saliency_maps), axis=0)
-	export_top_k_saliency(snp_names, avg_saliency_map, k= len(snp_names), repeat)
+	export_top_k_saliency(snp_names, avg_saliency_map, k= len(snp_names), repeat= repeat)
 
 	# Interactive SNP viewer
 	while True:
