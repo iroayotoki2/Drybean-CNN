@@ -43,6 +43,7 @@ if gpus:
 nb_classes = 4
 
 NUM_FOLDS = 5
+NUM_REPEATS = 10
 
 
 def assign_folds_to_file(filename, output_filename=None, seed=42):
@@ -100,7 +101,7 @@ def predict_height_from_all_folds(snp_vector, model_dir="model_IMP"):
 
     for i in range(1, NUM_FOLDS + 1):
         model_path = f"{model_dir}/model_{i}.h5"
-        model = load_model(model_path, custom_objects={"isru": isru})
+        model = load_model(model_path)
         model.compile(loss='mean_squared_error', optimizer='adam')
 
         pred = model.predict(one_hot, verbose=0)
@@ -129,28 +130,28 @@ def readData(input):
 def resnet(input):
     inputs = Input(shape=(input.shape[1], nb_classes))
 
-    x = Conv1D(10, 4, padding='same', activation='linear', kernel_initializer='TruncatedNormal',
-               kernel_regularizer=regularizers.l2(0.1), bias_regularizer=regularizers.l2(0.01))(inputs)
+    x = Conv1D(10, 4, padding='same', activation='relu', kernel_initializer='TruncatedNormal',
+               kernel_regularizer=regularizers.l2(0.0001))(inputs)
 
-    x = Conv1D(10, 20, padding='same', activation='linear', kernel_initializer='TruncatedNormal',
-               kernel_regularizer=regularizers.l2(0.1), bias_regularizer=regularizers.l2(0.01))(x)
+    x = Conv1D(10, 20, padding='same', activation='relu', kernel_initializer='TruncatedNormal',
+               kernel_regularizer=regularizers.l2(0.0001))(x)
 
-    x = Dropout(0.75)(x)
+    x = Dropout(0.3)(x)
 
-    shortcut = Conv1D(10, 4, padding='same', activation='linear', kernel_initializer='TruncatedNormal',
-                      kernel_regularizer=regularizers.l2(0.1), bias_regularizer=regularizers.l2(0.01))(inputs)
+    shortcut = Conv1D(10, 4, padding='same', activation='relu', kernel_initializer='TruncatedNormal',
+                      kernel_regularizer=regularizers.l2(0.0001))(inputs)
     x = layers.add([shortcut, x])
 
-    x = Conv1D(10, 4, padding='same', activation='linear', kernel_initializer='TruncatedNormal',
-               kernel_regularizer=regularizers.l2(0.1), bias_regularizer=regularizers.l2(0.01))(x)
+    x = Conv1D(10, 4, padding='same', activation='relu', kernel_initializer='TruncatedNormal',
+               kernel_regularizer=regularizers.l2(0.0001))(x)
 
-    x = Dropout(0.75)(x)
-    x = Flatten()(x)
+    #x = Dropout(0.75)(x)
+    x = GlobalAveragePooling1D()(x)
 
-    x = Dropout(0.75)(x)
+    x = Dropout(0.3)(x)
 
-    outputs = Dense(1, activation=isru, bias_regularizer=regularizers.l2(0.01), kernel_initializer='TruncatedNormal',
-                    name='out')(x)
+    outputs = Dense(1)(x)
+    #, activation)=isru, bias_regularizer=regularizers.l2(0.01), kernel_initializer='TruncatedNormal',name='out')(x)
 
     model = Model(inputs=inputs, outputs=outputs)
     model.compile(loss='mean_squared_error', optimizer=keras.optimizers.Adam(learning_rate=0.001), metrics=['mae'])
@@ -182,7 +183,9 @@ def show_images_plot(saliency, wald, outname):
     plt.close()
 
 
-def plot_average_saliency(avg_saliency, output_file="avg_saliency_across_folds.png"):
+def plot_average_saliency(avg_saliency, output_file="avg_saliency_across_folds.png", repeat=0):
+    if repeat != 0:
+        output_file = f"Repeat_{repeat}/{output_file}"
     plt.figure(figsize=(15, 6))
     plt.plot(avg_saliency, '.', markersize=3)
     plt.xlabel("SNP Index")
@@ -238,7 +241,7 @@ def collect_saliency_across_folds(imp_SNP, imp_pheno, folds, repeat):
 
         # Load the trained model for this fold
         model_path = f"Repeat_{repeat}/model_IMP/model_{i}.h5"
-        model = load_model(model_path, custom_objects={"isru": isru})
+        model = load_model(model_path)
         model.compile(loss='mean_squared_error', optimizer='adam')
 
         # Get test indices for this fold
@@ -317,53 +320,41 @@ def safe_delete(*varnames):
             del globals()[name]
 
 
-def run_saliency_summary(IMP_input, QA_input, repeat):
+def run_saliency_summary(IMP_input, QA_input, repeat, interactive=False):
     imp_SNP, imp_pheno, folds, snp_names, _ = readData(IMP_input)
 
     avg_saliency = collect_saliency_across_folds(imp_SNP, imp_pheno, folds, repeat)
-    plot_average_saliency(avg_saliency)
+    plot_average_saliency(avg_saliency, repeat=repeat)
 
     # After folds are run
-    if os.path.exists("fold_pcc_log.csv"):
-        df = pd.read_csv("fold_pcc_log.csv", header=None, names=["Repeat", "Fold", "PCC_Imputed", "PCC_NonImputed"])
-        df = df.sort_values(["Repeat", "Fold"])
-        df.to_csv("fold_pcc_summary.csv", index=False)
+    if repeat == NUM_REPEATS:
+        if os.path.exists("fold_pcc_log.csv"):
+            df = pd.read_csv("fold_pcc_log.csv", header=None, names=["Repeat", "Fold", "PCC_Imputed", "PCC_NonImputed"])
+            df = df.sort_values(["Repeat", "Fold"])
+            df.to_csv("fold_pcc_summary.csv", index=False)
 
-        print("✅ Summary CSV generated: fold_pcc_summary.csv")
-        print("📈 Average PCC (imputed):", round(df['PCC_Imputed'].mean(), 4))
-        print("📈 Average PCC (non-imputed):", round(df['PCC_NonImputed'].mean(), 4))
-    else:
-        print("❌ PCC log not found. Did folds run correctly?")
+            print("✅ Summary CSV generated: fold_pcc_summary.csv")
+            print("📈 Average PCC (imputed):", round(df['PCC_Imputed'].mean(), 4))
+            print("📈 Average PCC (non-imputed):", round(df['PCC_NonImputed'].mean(), 4))
+        else:
+            print("❌ PCC log not found. Did folds run correctly?")
 
     print("✅ Average saliency map and plot generated.")
 
-    # SNP saliency viewer
-    test_idx = np.where(folds == 1)[0]
-    sample = indices_to_one_hot(imp_SNP[test_idx[0]], nb_classes).astype(np.float32)
-
-    saliency_maps = []
-    for i in range(1, NUM_FOLDS + 1):
-        model_path = f"Repeat_{repeat}/model_IMP/model_{i}.h5"
-        model = load_model(model_path, custom_objects={"isru": isru})
-        model.compile(loss='mean_squared_error', optimizer='adam')
-
-        sal = get_saliency(sample, model)
-        saliency_maps.append(sal)
-
-    avg_saliency_map = np.mean(np.stack(saliency_maps), axis=0)
-    export_top_k_saliency(snp_names, avg_saliency_map, k=len(snp_names), repeat=repeat)
+    export_top_k_saliency(snp_names, avg_saliency, k=len(snp_names), repeat=repeat)
 
     # Interactive SNP viewer
-    while True:
-        snp_query = input("Enter SNP name to view saliency (or type 'q' to quit): ")
-        if snp_query.lower() in ['q', 'quit', 'exit']:
-            break
+    if interactive:
+        while True:
+            snp_query = input("Enter SNP name to view saliency (or type 'q' to quit): ")
+            if snp_query.lower() in ['q', 'quit', 'exit']:
+                break
 
-        try:
-            idx = snp_names.index(snp_query)
-            print(f"🔬 Average saliency for {snp_query}: {avg_saliency_map[idx]:.6f}\n")
-        except ValueError:
-            print("❌ SNP not found. Please check the name and try again.\n")
+            try:
+                idx = snp_names.index(snp_query)
+                print(f"🔬 Average saliency for {snp_query}: {avg_saliency[idx]:.6f}\n")
+            except ValueError:
+                print("❌ SNP not found. Please check the name and try again.\n")
 
 
 def main(IMP_input, QA_input, repeat, run_fold=None):
@@ -375,9 +366,11 @@ def main(IMP_input, QA_input, repeat, run_fold=None):
     QA_SNP, QA_pheno, folds, _, _ = readData(QA_input)
     PHENOTYPE = imp_pheno
 
+    path = f"Repeat_{repeat}/fold_data.csv"
+    if os.path.exists(path):
+        os.remove(path)
     # If a specific fold is requested, just run that one; otherwise run all
     fold_range = [run_fold] if run_fold else range(1, NUM_FOLDS + 1)
-    sv_data = []
     for i in fold_range:
         print(f"\n🔁 Starting Repeat{repeat}fold {i} ...")
 
@@ -416,7 +409,8 @@ def main(IMP_input, QA_input, repeat, run_fold=None):
         IMP_corr.append(float(f'{corr:.4f}'))
         print(f"✅ Fold {i} (imputed) PCC: {corr:.4f}")
         fold_pred = pd.DataFrame({"fold": i, "Line": testLines, "predicted": pred, "phenotype": testPheno})
-        sv_data.append(fold_pred)
+        fold_pred.to_csv(f"Repeat_{repeat}/fold_data.csv", mode="a",
+                         header=not os.path.exists(f"Repeat_{repeat}/fold_data.csv"), index=False)
 
         # Train and evaluate on non-imputed data
         history, _, corr = model_train(
@@ -433,9 +427,6 @@ def main(IMP_input, QA_input, repeat, run_fold=None):
         K.clear_session()
         gc.collect()
 
-    sv_data = pd.concat(sv_data, ignore_index=True)
-    sv_data.to_csv(f"Repeat_{repeat}/fold_data.csv", index=False)
-
     if run_fold is not None:
         with open("fold_pcc_log.csv", "a", newline="") as file:
             writer = csv.writer(file)
@@ -446,8 +437,8 @@ def main(IMP_input, QA_input, repeat, run_fold=None):
         with open("fold_pcc_summary.csv", mode="w", newline="") as file:
             writer = csv.writer(file)
             writer.writerow(["Repeat", "Fold", "PCC_Imputed", "PCC_NonImputed"])
-            for i in range(NUM_FOLDS):
-                writer.writerow([i + 1, IMP_corr[i], QA_corr[i]])
+            for fold in range(NUM_FOLDS):
+                writer.writerow([repeat, fold + 1, IMP_corr[fold], QA_corr[fold]])
 
 
 def vcf_preprocessing(IMP_input, output_path=None):
@@ -598,6 +589,7 @@ if __name__ == '__main__':
         saliency_cols = [col for col in merged_df.columns if col.startswith("Saliency_")]
         merged_df["avg_saliency"] = merged_df[saliency_cols].mean(axis=1)
         export_top_k_saliency(snp_names=merged_df["SNP"], saliency_values=merged_df["avg_saliency"])
+        plot_average_saliency(avg_saliency=merged_df["avg_saliency"])
     # Compute kendall's tau for the experiment
     tau_df = []
     for i in range(1, 11):
