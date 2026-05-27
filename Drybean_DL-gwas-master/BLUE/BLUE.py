@@ -1,6 +1,7 @@
 from __future__ import print_function
 import os
 
+from keras.src.layers import Flatten
 from pandas import read_csv
 
 os.environ["OMP_NUM_THREADS"] = "2"
@@ -130,23 +131,23 @@ def readData(input):
 def resnet(input):
     inputs = Input(shape=(input.shape[1], nb_classes))
 
-    x = Conv1D(10, 4, padding='same', activation='relu', kernel_initializer='TruncatedNormal',
+    x = Conv1D(10, 4, padding='same', activation='linear', kernel_initializer='TruncatedNormal',
                kernel_regularizer=regularizers.l2(0.0001))(inputs)
 
-    x = Conv1D(10, 20, padding='same', activation='relu', kernel_initializer='TruncatedNormal',
+    x = Conv1D(10, 20, padding='same', activation='linear', kernel_initializer='TruncatedNormal',
                kernel_regularizer=regularizers.l2(0.0001))(x)
 
     x = Dropout(0.3)(x)
 
-    shortcut = Conv1D(10, 4, padding='same', activation='relu', kernel_initializer='TruncatedNormal',
+    shortcut = Conv1D(10, 4, padding='same', activation='linear', kernel_initializer='TruncatedNormal',
                       kernel_regularizer=regularizers.l2(0.0001))(inputs)
     x = layers.add([shortcut, x])
 
-    x = Conv1D(10, 4, padding='same', activation='relu', kernel_initializer='TruncatedNormal',
+    x = Conv1D(10, 4, padding='same', activation='linear', kernel_initializer='TruncatedNormal',
                kernel_regularizer=regularizers.l2(0.0001))(x)
 
     #x = Dropout(0.75)(x)
-    x = GlobalAveragePooling1D()(x)
+    x = Flatten()(x)
 
     x = Dropout(0.3)(x)
 
@@ -366,9 +367,7 @@ def main(IMP_input, QA_input, repeat, run_fold=None):
     QA_SNP, QA_pheno, folds, _, _ = readData(QA_input)
     PHENOTYPE = imp_pheno
 
-    path = f"Repeat_{repeat}/fold_data.csv"
-    if os.path.exists(path):
-        os.remove(path)
+
     # If a specific fold is requested, just run that one; otherwise run all
     fold_range = [run_fold] if run_fold else range(1, NUM_FOLDS + 1)
     for i in fold_range:
