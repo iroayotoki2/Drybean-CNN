@@ -559,7 +559,7 @@ if __name__ == '__main__':
     # Add empty fold column if absent
     IMP_input = dummy_folds_column(IMP_input)
     QA_input = dummy_folds_column(QA_input)
-    folds = [args.fold] if args.fold else range(1, 6)  # or whatever your fold count is
+    folds = [args.fold] if args.fold else range(1, NUM_FOLDS + 1)
 
     for i in range(1, 11):
         assign_folds_to_file(IMP_input, seed=i)
@@ -605,7 +605,7 @@ if __name__ == '__main__':
     for i in range(1, 11):
         path = f"Repeat_{i}/fold_data.csv"
         df = prediction_error(path)
-        # Rename saliency column
+        # Rename error columns
         df.rename(columns={"Error": f"Error_{i}"}, inplace=True)
         if Error_df is None:
             Error_df = df.copy()

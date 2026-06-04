@@ -20,3 +20,4 @@ export MKL_NUM_THREADS=$SLURM_CPUS_PER_TASK
 export OPENBLAS_NUM_THREADS=$SLURM_CPUS_PER_TASK
 
 python3 BLUE.py imputed_GenotypicData.vcf Raw_GenotypicData.vcf --pheno pheno_normalized.tsv
+python3 BLUE.py  imputed_GenotypicData_processed.tsv  Raw_GenotypicData_processed.tsv  --summary
