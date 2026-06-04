@@ -132,27 +132,27 @@ def resnet(input):
     inputs = Input(shape=(input.shape[1], nb_classes))
 
     x = Conv1D(10, 4, padding='same', activation='linear', kernel_initializer='TruncatedNormal',
-               kernel_regularizer=regularizers.l2(0.0001))(inputs)
+               kernel_regularizer=regularizers.l2(0.1), bias_regularizer=regularizers.l2(0.01))(inputs)
 
     x = Conv1D(10, 20, padding='same', activation='linear', kernel_initializer='TruncatedNormal',
-               kernel_regularizer=regularizers.l2(0.0001))(x)
+               kernel_regularizer=regularizers.l2(0.1), bias_regularizer=regularizers.l2(0.01))(x)
 
-    x = Dropout(0.3)(x)
+    x = Dropout(0.75)(x)
 
     shortcut = Conv1D(10, 4, padding='same', activation='linear', kernel_initializer='TruncatedNormal',
-                      kernel_regularizer=regularizers.l2(0.0001))(inputs)
+                      kernel_regularizer=regularizers.l2(0.1), bias_regularizer=regularizers.l2(0.01))(inputs)
     x = layers.add([shortcut, x])
 
     x = Conv1D(10, 4, padding='same', activation='linear', kernel_initializer='TruncatedNormal',
-               kernel_regularizer=regularizers.l2(0.0001))(x)
+               kernel_regularizer=regularizers.l2(0.1), bias_regularizer=regularizers.l2(0.01))(x)
 
-    #x = Dropout(0.75)(x)
+    x = Dropout(0.75)(x)
     x = Flatten()(x)
 
-    x = Dropout(0.3)(x)
+    x = Dropout(0.75)(x)
 
-    outputs = Dense(1)(x)
-    #, activation)=isru, bias_regularizer=regularizers.l2(0.01), kernel_initializer='TruncatedNormal',name='out')(x)
+    outputs = Dense(1, activation=isru, bias_regularizer=regularizers.l2(0.01), kernel_initializer='TruncatedNormal',
+                    name='out')(x)
 
     model = Model(inputs=inputs, outputs=outputs)
     model.compile(loss='mean_squared_error', optimizer=keras.optimizers.Adam(learning_rate=0.001), metrics=['mae'])
@@ -258,7 +258,7 @@ def collect_saliency_across_folds(imp_SNP, imp_pheno, folds, repeat):
     return np.mean(np.stack(all_saliencies), axis=0)  # shape: (num_SNPs,)
 
 
-a = 0.03  # height
+a = 0.00000001  # height
 
 
 def isru(x):
@@ -559,20 +559,18 @@ if __name__ == '__main__':
     # Add empty fold column if absent
     IMP_input = dummy_folds_column(IMP_input)
     QA_input = dummy_folds_column(QA_input)
+    folds = [args.fold] if args.fold else range(1, 6)  # or whatever your fold count is
 
     for i in range(1, 11):
-        assign_folds_to_file(IMP_input, seed=i)  # assign new folds
-        sync_folds_column(IMP_input, QA_input)  # sync folds to QA
+        assign_folds_to_file(IMP_input, seed=i)
+        sync_folds_column(IMP_input, QA_input)
 
         if args.summary:
             run_saliency_summary(IMP_input, QA_input, repeat=i)
-        elif args.fold:
-            main(IMP_input, QA_input, repeat=i, run_fold=args.fold)
         else:
-            print("🌀 No fold specified — running all folds via run_all_folds.py ...")
-            subprocess.run(['python3', 'run_all_folds.py', IMP_input, QA_input])
-        print(f"Repeat {i} complete")
-
+            for fold in folds:
+                main(IMP_input, QA_input, repeat=i, run_fold=fold)
+                print(f"Repeat {i} fold {fold} complete")
     # Find average saliency for all repeats and extract top snps
     if args.summary:
         merged_df = None
