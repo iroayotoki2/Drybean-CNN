@@ -102,7 +102,7 @@ def predict_height_from_all_folds(snp_vector, model_dir="model_IMP"):
 
     for i in range(1, NUM_FOLDS + 1):
         model_path = f"{model_dir}/model_{i}.h5"
-        model = load_model(model_path)
+        model = load_model(model_path, custom_objects={"isru": isru})
         model.compile(loss='mean_squared_error', optimizer='adam')
 
         pred = model.predict(one_hot, verbose=0)
@@ -242,7 +242,7 @@ def collect_saliency_across_folds(imp_SNP, imp_pheno, folds, repeat):
 
         # Load the trained model for this fold
         model_path = f"Repeat_{repeat}/model_IMP/model_{i}.h5"
-        model = load_model(model_path)
+        model = load_model(model_path, custom_objects={"isru": isru})
         model.compile(loss='mean_squared_error', optimizer='adam')
 
         # Get test indices for this fold
