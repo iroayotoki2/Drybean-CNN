@@ -2,6 +2,33 @@
 
 A saliency map approach was applied to measure phenotype contribution for genome wide association study.  It creates output files on average saliency graph along with top SNPs with highest average saliency. On program completion, it provides the average PCC (Pearson correlation coefficient) along with a prompt for the user to search saliency based on SNP name. The program is implemented using Keras3.5 and Tensorflow backend with python 3.1. It was adapted from the [Soybean-CNN](https://github.com/ProductiveOwl/Soybean-CNN) research by Jake Goode, Madhurika Madhu, Raeein Bagheri, and Yan Yan.
 
+
+## Installation & Dependencies
+
+### 1. Python Dependencies
+Install the required Python packages using pip:
+```bash
+pip install -r requirements.txt
+```
+
+### 2. System Dependency: PLINK 1.9
+This pipeline executes Linkage Disequilibrium (LD) pruning natively via a subprocess call to PLINK. 
+If you are running this on a local machine or a cloud environment where PLINK is not pre-installed, use one of the following commands:
+
+* **Ubuntu / Debian Linux:**
+  ```bash
+  sudo apt-get update && sudo apt-get install -y plink
+  ```
+* **macOS (via Homebrew):**
+  ```bash
+  brew install plink
+  ```
+* **HPC Clusters (Slurm / LSF / Module System):**
+  If running on an academic or corporate computing cluster, PLINK is likely available as an environment module. Load it in your job submission script before executing the pipeline:
+  ```bash
+  module load plink
+  ```
+
 ### Prerequisites
 
 Python packages required:
