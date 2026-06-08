@@ -9,6 +9,7 @@
 set -euo pipefail
 
 module load python/3.10
+module load plink
 
 cd ~/scratch/Drybean-CNN
 source ENV/bin/activate
