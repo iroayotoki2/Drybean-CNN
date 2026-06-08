@@ -543,9 +543,9 @@ if __name__ == '__main__':
     QA_input = args.QA_file
     #LD pruning
     if IMP_input.endswith(".vcf"):
-        subprocess.run([ "python", "ld_pruning.py", "--vcf", IMP_input,], check=True)
+        subprocess.run([ "python", "ld_pruning.py", "--vcf", IMP_input], check=True)
     if QA_input.endswith(".vcf"):
-        subprocess.run(["python", "ld_pruning.py", "--vcf", QA_input, ], check=True)
+        subprocess.run(["python", "ld_pruning.py", "--vcf", QA_input], check=True)
 
     # Data cleaning by file format to produce tsvs for the pipline
     if IMP_input.endswith(".vcf"):
