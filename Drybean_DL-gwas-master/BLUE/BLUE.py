@@ -241,7 +241,7 @@ def collect_saliency_across_folds(imp_SNP, imp_pheno, folds, repeat):
         print(f"Processing Repeat {repeat} fold {i}...")
 
         # Load the trained model for this fold
-        model_path = f"Repeat_{repeat}/model_IMP/model_{i}.h5"
+        model_path = f"Repeat_{repeat}/model_QA/model_{i}.h5"
         model = load_model(model_path, custom_objects={"isru": isru})
         model.compile(loss='mean_squared_error', optimizer='adam')
 
