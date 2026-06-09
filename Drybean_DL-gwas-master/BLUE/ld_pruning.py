@@ -22,8 +22,8 @@ def inline_vcf_ld_prune(vcf_in, window_snps=50, step_snps=5, r2_threshold=0.9):
             "plink",
             "--vcf", vcf_in,
             "--vcf-idspace-to", "_",
-	    "--double-id",
-	    "--indep-pairwise", str(window_snps), str(step_snps), str(r2_threshold),
+	        "--double-id",
+	        "--indep-pairwise", str(window_snps), str(step_snps), str(r2_threshold),
             "--out", temp_prefix,
             "--allow-extra-chr"
         ]
@@ -35,7 +35,7 @@ def inline_vcf_ld_prune(vcf_in, window_snps=50, step_snps=5, r2_threshold=0.9):
             "--vcf", vcf_in,
             "--vcf-idspace-to", "_",
             "--double-id",
-	    "--extract", f"{temp_prefix}.prune.in",
+	        "--extract", f"{temp_prefix}.prune.in",
             "--keep-allele-order",
             "--recode", "vcf-iid",
             "--out", temp_vcf_out,

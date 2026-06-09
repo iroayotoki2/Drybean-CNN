@@ -447,7 +447,7 @@ def vcf_preprocessing(IMP_input, output_path=None):
     index = []
 
     for record in vcf:
-        index.append(f"{record.chrom}_{record.pos}")
+        index.append(f"Chr{record.chrom}_{record.pos}")
 
         gts = [sum(s['GT']) if s['GT'] and None not in s['GT'] else int(-1)
                for s in record.samples.values()]
@@ -485,6 +485,7 @@ def csv_preprocessing(input_path, output_path=None):
 def combine_pheno(input_path, pheno_path, output_path=None):
     Geno = pd.read_csv(input_path, sep='\t')
     pheno = pd.read_csv(pheno_path, sep='\t')
+    pheno["Line"] = pheno["Line"].str.replace(" ", "_")
     merged_df = pd.merge(Geno, pheno, on='Line', how='left')
 
     # Reorder columns
