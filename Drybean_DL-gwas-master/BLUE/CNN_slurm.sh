@@ -8,17 +8,31 @@
 
 set -euo pipefail
 
-module load python/3.10
-module load plink
-
-cd ~/scratch/Drybean-CNN
-source ENV/bin/activate
-
 cd ~/scratch/Drybean-CNN/Drybean_DL-gwas-master/BLUE/
 
 export OMP_NUM_THREADS=$SLURM_CPUS_PER_TASK
 export MKL_NUM_THREADS=$SLURM_CPUS_PER_TASK
 export OPENBLAS_NUM_THREADS=$SLURM_CPUS_PER_TASK
 
-python3 BLUE.py imputed_GenotypicData.vcf Raw_GenotypicData.vcf --pheno pheno_normalized.tsv
-python3 BLUE.py  imputed_GenotypicData_processed.tsv  Raw_GenotypicData_processed.tsv  --summary
+module load StdEnv/2020
+module load plink/1.9b_6.21-x86_64
+
+which plink
+plink --version
+
+python ld_pruning.py --vcf imputed_GenotypicData.vcf
+python ld_pruning.py --vcf Raw_GenotypicData.vcf
+
+module load StdEnv/2023
+module load python/3.10
+
+cd ~/scratch/Drybean-CNN
+source ENV/bin/activate
+
+cd ~/scratch/Drybean-CNN/Drybean_DL-gwas-master/BLUE/
+
+which python
+python --version
+
+python BLUE.py imputed_GenotypicData.vcf Raw_GenotypicData.vcf --pheno pheno_normalized.tsv
+python BLUE.py imputed_GenotypicData_processed.tsv Raw_GenotypicData_processed.tsv --summary
