@@ -363,8 +363,8 @@ def main(IMP_input, QA_input, repeat, run_fold=None):
     QA_corr = []
 
     # Load data once
-    imp_SNP, imp_pheno, folds, snp_names, Lines = readData(IMP_input)
-    QA_SNP, QA_pheno, folds, _, _ = readData(QA_input)
+    imp_SNP, imp_pheno, folds, snp_names, _ = readData(IMP_input)
+    QA_SNP, QA_pheno, folds, _, Lines = readData(QA_input)
     PHENOTYPE = imp_pheno
 
 
@@ -407,19 +407,19 @@ def main(IMP_input, QA_input, repeat, run_fold=None):
         )
         IMP_corr.append(float(f'{corr:.4f}'))
         print(f"✅ Fold {i} (imputed) PCC: {corr:.4f}")
-        fold_pred = pd.DataFrame({"fold": i, "Line": testLines, "predicted": pred, "phenotype": testPheno})
-        fold_pred.to_csv(f"Repeat_{repeat}/fold_data.csv", mode="a",
-                         header=not os.path.exists(f"Repeat_{repeat}/fold_data.csv"), index=False)
+
 
         # Train and evaluate on non-imputed data
-        history, _, corr = model_train(
+        history, pred, corr = model_train(
             testSNP_QA, valSNP_QA, trainSNP_QA, testPheno, valPheno, trainPheno,
             f'Repeat_{repeat}/model_QA/model_{i}.h5',
             f'Repeat_{repeat}/model_QA/model_weights{i}.weights.h5'
         )
         QA_corr.append(float(f'{corr:.4f}'))
         print(f"✅ Fold {i} (non-imputed) PCC: {corr:.4f}")
-
+        fold_pred = pd.DataFrame({"fold": i, "Line": testLines, "predicted": pred, "phenotype": testPheno})
+        fold_pred.to_csv(f"Repeat_{repeat}/fold_data.csv", mode="a",
+                         header=not os.path.exists(f"Repeat_{repeat}/fold_data.csv"), index=False)
         # 🧹 Clear memory
         from keras import backend as K
         import gc
@@ -568,7 +568,7 @@ if __name__ == '__main__':
         sync_folds_column(IMP_input, QA_input)
 
         if args.summary:
-            run_saliency_summary(IMP_input, QA_input, repeat=i)
+            run_saliency_summary(IMP_input=QA_input, QA_input=IMP_input, repeat=i)
         else:
             for fold in folds:
                 main(IMP_input, QA_input, repeat=i, run_fold=fold)
