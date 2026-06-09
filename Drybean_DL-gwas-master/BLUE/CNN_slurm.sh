@@ -14,6 +14,7 @@ export OMP_NUM_THREADS=$SLURM_CPUS_PER_TASK
 export MKL_NUM_THREADS=$SLURM_CPUS_PER_TASK
 export OPENBLAS_NUM_THREADS=$SLURM_CPUS_PER_TASK
 
+module purge
 module load StdEnv/2020
 module load plink/1.9b_6.21-x86_64
 
