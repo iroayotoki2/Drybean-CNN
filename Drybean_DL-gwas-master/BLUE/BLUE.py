@@ -320,6 +320,21 @@ def safe_delete(*varnames):
         elif name in globals():
             del globals()[name]
 
+def plot_training_history(history, output_file="training_history.png"):
+
+    plt.figure(figsize=(10,5))
+
+    plt.plot(history.history['loss'], label='Train Loss')
+    plt.plot(history.history['val_loss'], label='Validation Loss')
+
+    plt.xlabel("Epoch")
+    plt.ylabel("Loss")
+    plt.title("Training and Validation Loss")
+    plt.legend()
+
+    plt.tight_layout()
+    plt.savefig(output_file)
+    plt.close()
 
 def run_saliency_summary(IMP_input, QA_input, repeat, interactive=False):
     imp_SNP, imp_pheno, folds, snp_names, _ = readData(IMP_input)
@@ -415,6 +430,9 @@ def main(IMP_input, QA_input, repeat, run_fold=None):
             f'Repeat_{repeat}/model_QA/model_{i}.h5',
             f'Repeat_{repeat}/model_QA/model_weights{i}.weights.h5'
         )
+        if repeat == 10:
+            if i == 2:
+                plot_training_history(history)
         QA_corr.append(float(f'{corr:.4f}'))
         print(f"✅ Fold {i} (non-imputed) PCC: {corr:.4f}")
         fold_pred = pd.DataFrame({"fold": i, "Line": testLines, "predicted": pred, "phenotype": testPheno})
