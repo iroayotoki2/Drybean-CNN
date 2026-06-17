@@ -137,7 +137,7 @@ def resnet(input):
     x = Conv1D(10, 20, padding='same', activation='linear', kernel_initializer='TruncatedNormal',
                kernel_regularizer=regularizers.l2(0.1), bias_regularizer=regularizers.l2(0.01))(x)
 
-    x = Dropout(0.75)(x)
+    x = Dropout(0.5)(x)
 
     shortcut = Conv1D(10, 4, padding='same', activation='linear', kernel_initializer='TruncatedNormal',
                       kernel_regularizer=regularizers.l2(0.1), bias_regularizer=regularizers.l2(0.01))(inputs)
@@ -146,10 +146,10 @@ def resnet(input):
     x = Conv1D(10, 4, padding='same', activation='linear', kernel_initializer='TruncatedNormal',
                kernel_regularizer=regularizers.l2(0.1), bias_regularizer=regularizers.l2(0.01))(x)
 
-    x = Dropout(0.75)(x)
+    x = Dropout(0.5)(x)
     x = Flatten()(x)
 
-    x = Dropout(0.75)(x)
+    x = Dropout(0.5)(x)
 
     outputs = Dense(1, activation=isru, bias_regularizer=regularizers.l2(0.01), kernel_initializer='TruncatedNormal',
                     name='out')(x)
