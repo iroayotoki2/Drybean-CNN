@@ -433,6 +433,9 @@ def main(IMP_input, QA_input, repeat, run_fold=None):
         if repeat == 10:
             if i == 2:
                 plot_training_history(history)
+        if repeat == 5:
+            if i == 2:
+                plot_training_history(history, output_file="poor_training_history.png")
         QA_corr.append(float(f'{corr:.4f}'))
         print(f"✅ Fold {i} (non-imputed) PCC: {corr:.4f}")
         fold_pred = pd.DataFrame({"fold": i, "Line": testLines, "predicted": pred, "phenotype": testPheno})
