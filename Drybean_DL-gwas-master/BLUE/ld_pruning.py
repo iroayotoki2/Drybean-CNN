@@ -11,7 +11,7 @@ def inline_vcf_ld_prune(vcf_in, window_snps=50, step_snps=5, r2_threshold=0.9):
     the result back to a VCF format safely using isolated workspaces.
     """
     print(f"[*] Starting LD Pruning on: {vcf_in} (r2={r2_threshold})")
-
+    vcf_out = f"LD_{vcf_in}"
     # 1. Create an isolated temporary directory to completely avoid collisions
     with tempfile.TemporaryDirectory() as tmpdir:
         temp_prefix = os.path.join(tmpdir, "plink_workspace")
@@ -47,9 +47,9 @@ def inline_vcf_ld_prune(vcf_in, window_snps=50, step_snps=5, r2_threshold=0.9):
         actual_plink_vcf = f"{temp_vcf_out}.vcf"
 
         # 4. Safely overwrite the original VCF file with the newly pruned subset
-        shutil.move(actual_plink_vcf, vcf_in)
+        shutil.move(actual_plink_vcf, vcf_out)
 
-    print(f"[+] Overwrote {vcf_in} successfully with independent epistatic-safe variants.\n")
+    print(f"[+] Create {vcf_out} successfully with independent epistatic-safe variants.\n")
 
 
 if __name__ == "__main__":

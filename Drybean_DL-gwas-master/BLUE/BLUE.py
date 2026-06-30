@@ -549,6 +549,52 @@ def prediction_error(path):
     new_df = df[["Line", "Error"]]
     return new_df
 
+def gblup_preprocessing(tsv_path):
+    vcf_path = tsv_path.replace("_processed.tsv", ".vcf")
+    vcf_path = vcf_path.replace("LD_", "")
+    matrix_path = vcf_preprocessing(vcf_path)
+    matrix_path = combine_pheno(matrix_path)
+    matrix_path = dummy_folds_column(matrix_path)
+    return matrix_path
+
+def gblup_main(GBLUP_input, repeat, run_fold):
+    SNP, PHENOTYPE, folds, snp_names, Lines = readData(GBLUP_input)
+    p = SNP.mean(axis=0) / 2  # Allele frequencies
+    Z = SNP - 2 * p  # Center genotypes
+    denom = 2 * np.sum(p * (1 - p))  # VanRaden normalization
+
+    G = (Z @ Z.T) / denom
+
+    fold_range = [run_fold] if run_fold else range(1, NUM_FOLDS + 1)
+    for i in fold_range:
+        print(f"\n🔁 Starting Repeat{repeat}fold {i} ...")
+
+        # Identify test fold
+        testIdx = np.where(folds == i)[0]
+
+        # If NUM_FOLDS >= 3, use separate fold for validation
+        if NUM_FOLDS >= 3:
+            val_fold = (i % NUM_FOLDS) + 1
+            valIdx = np.where(folds == val_fold)[0]
+            trainIdx = np.where((folds != i) & (folds != val_fold))[0]
+        else:
+            # With 2 folds: split the other fold randomly into train/val
+            other_idx = np.where(folds != i)[0]
+            np.random.seed(repeat)
+            np.random.shuffle(other_idx)
+            val_size = int(0.2 * len(other_idx))
+            valIdx = other_idx[:val_size]
+            trainIdx = other_idx[val_size:]
+
+        if len(trainIdx) == 0 or len(valIdx) == 0:
+            raise ValueError(f"Fold {i}: Training or validation set is empty. Check NUM_FOLDS or data distribution.")
+
+        # Partition data
+        trainSNP, trainPheno =G[np.ix_(trainIdx, trainIdx)], PHENOTYPE[trainIdx]
+        valSNP, valSNP_QA, valPheno = imp_SNP[valIdx], QA_SNP[valIdx], PHENOTYPE[valIdx]
+        testSNP, testSNP_QA, testPheno, testLines = imp_SNP[testIdx], QA_SNP[testIdx], PHENOTYPE[testIdx], Lines[
+            testIdx]
+
 
 if __name__ == '__main__':
 
@@ -583,12 +629,13 @@ if __name__ == '__main__':
     # Add empty fold column if absent
     IMP_input = dummy_folds_column(IMP_input)
     QA_input = dummy_folds_column(QA_input)
+    GBLUP_input = gblup_preprocessing(QA_input)
     folds = [args.fold] if args.fold else range(1, NUM_FOLDS + 1)
 
     for i in range(1, 11):
         assign_folds_to_file(IMP_input, seed=i)
         sync_folds_column(IMP_input, QA_input)
-
+        sync_folds_column(IMP_input,GBLUP_input)
         if args.summary:
             run_saliency_summary(IMP_input=QA_input, QA_input=IMP_input, repeat=i)
         else:

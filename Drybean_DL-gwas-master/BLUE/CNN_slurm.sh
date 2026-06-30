@@ -35,5 +35,5 @@ cd ~/scratch/Drybean-CNN/Drybean_DL-gwas-master/BLUE/
 which python
 python --version
 
-python BLUE.py imputed_GenotypicData.vcf Raw_GenotypicData.vcf --pheno pheno_normalized.tsv
-python BLUE.py imputed_GenotypicData_processed.tsv Raw_GenotypicData_processed.tsv --summary
+python BLUE.py LD_imputed_GenotypicData.vcf LD_Raw_GenotypicData.vcf --pheno pheno_normalized.tsv
+python BLUE.py LD_imputed_GenotypicData_processed.tsv LD_Raw_GenotypicData_processed.tsv --summary
