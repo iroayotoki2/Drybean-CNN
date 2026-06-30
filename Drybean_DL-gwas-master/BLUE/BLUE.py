@@ -355,6 +355,16 @@ def run_saliency_summary(IMP_input, QA_input, repeat, interactive=False):
             print("📈 Average PCC (non-imputed):", round(df['PCC_NonImputed'].mean(), 4))
         else:
             print("❌ PCC log not found. Did folds run correctly?")
+        if os.path.exists("GB_fold_pcc_log.csv"):
+            Gdf = pd.read_csv("fold_pcc_log.csv", header=None, names=["Repeat", "Fold", "PCC_GBLUP"])
+            Gdf = df.sort_values(["Repeat", "Fold"])
+            Gdf.to_csv("GB_fold_pcc_summary.csv", index=False)
+
+            print("✅ Summary CSV generated: GB_fold_pcc_summary.csv")
+            print("📈 Average PCC for GBLUP:", round(Gdf['PCC_GBLUP'].mean(), 4))
+
+        else:
+            print("❌ GBLUP PCC log not found. Did folds run correctly?")
 
     print("✅ Average saliency map and plot generated.")
 
@@ -557,7 +567,8 @@ def gblup_preprocessing(tsv_path):
     matrix_path = dummy_folds_column(matrix_path)
     return matrix_path
 
-def gblup_main(GBLUP_input, repeat, run_fold):
+def gblup_main(GBLUP_input, repeat, run_fold=None):
+    GB_corr = []
     SNP, PHENOTYPE, folds, snp_names, Lines = readData(GBLUP_input)
     p = SNP.mean(axis=0) / 2  # Allele frequencies
     Z = SNP - 2 * p  # Center genotypes
@@ -590,10 +601,61 @@ def gblup_main(GBLUP_input, repeat, run_fold):
             raise ValueError(f"Fold {i}: Training or validation set is empty. Check NUM_FOLDS or data distribution.")
 
         # Partition data
-        trainSNP, trainPheno =G[np.ix_(trainIdx, trainIdx)], PHENOTYPE[trainIdx]
-        valSNP, valSNP_QA, valPheno = imp_SNP[valIdx], QA_SNP[valIdx], PHENOTYPE[valIdx]
-        testSNP, testSNP_QA, testPheno, testLines = imp_SNP[testIdx], QA_SNP[testIdx], PHENOTYPE[testIdx], Lines[
+        G_train, y_train =G[np.ix_(trainIdx, trainIdx)], PHENOTYPE[trainIdx]
+        G_val_train, y_val = G[np.ix_(valIdx, trainIdx)], PHENOTYPE[valIdx]
+        G_test_train, y_test, testLines = G[np.ix_(testIdx, trainIdx)], PHENOTYPE[testIdx], Lines[
             testIdx]
+        # Candidate regularization strengths
+        candidate_lambdas = np.logspace(-4, 2, 20)
+
+        best_lambda = None
+        best_corr = -np.inf
+        best_u = None
+
+        n = G_train.shape[0]
+
+        for lam in candidate_lambdas:
+
+            # Regularize the genomic relationship matrix
+            G_reg = G_train + lam * np.eye(n)
+
+            # Solve for training breeding values
+            u = np.linalg.solve(G_reg, y_train)
+
+            # Predict validation phenotypes
+            y_val_pred = G_val_train @ u
+
+            # Validation correlation
+            corr = np.corrcoef(y_val, y_val_pred)[0, 1]
+
+            # Keep the best lambda
+            if corr > best_corr:
+                best_corr = corr
+                best_lambda = lam
+                best_u = u
+
+        print(f"Best λ = {best_lambda:.4f} | Validation correlation = {best_corr:.4f}")
+
+        # Use the best model to predict the test set
+        y_test_pred = G_test_train @ best_u
+        test_corr = pearsonr(y_test_pred,y_test)[0]
+        GB_corr.append(float(f'{test_corr:.4f}'))
+        fold_pred = pd.DataFrame({"fold": i, "Line": testLines, "predicted": y_test_pred, "phenotype": y_test})
+        fold_pred.to_csv(f"Repeat_{repeat}/GB_fold_data.csv", mode="a",
+                         header=not os.path.exists(f"Repeat_{repeat}/GB_fold_data.csv"), index=False)
+
+        if run_fold is not None:
+            with open("GB_fold_pcc_log.csv", "a", newline="") as file:
+                writer = csv.writer(file)
+                writer.writerow([repeat, run_fold,  GB_corr[0]])
+                print(f"✅ Saved fold {run_fold} to GB_fold_pcc_log.csv")
+
+        if run_fold is None:
+            with open("GB_fold_pcc_summary.csv", mode="w", newline="") as file:
+                writer = csv.writer(file)
+                writer.writerow(["Repeat", "Fold", "PCC_GBLUP"])
+                for fold in range(NUM_FOLDS):
+                    writer.writerow([repeat, fold + 1, GB_corr[fold]])
 
 
 if __name__ == '__main__':
@@ -641,6 +703,7 @@ if __name__ == '__main__':
         else:
             for fold in folds:
                 main(IMP_input, QA_input, repeat=i, run_fold=fold)
+                gblup_main(GBLUP_input, repeat=i, run_fold=fold)
                 print(f"Repeat {i} fold {fold} complete")
     # Find average saliency for all repeats and extract top snps
     if args.summary:
@@ -686,3 +749,33 @@ if __name__ == '__main__':
     Error_df["avg_error"] = Error_df[Error_cols].mean(axis=1)
     Error_cleaned = Error_df[["Line", "avg_error"]].sort_values(by="avg_error", ascending=True)
     Error_cleaned.to_csv("Prediction_Error.csv", sep='\t', index=False)
+
+
+#Same metrics for GBLUP
+GB_tau_df = []
+    for i in range(1, 11):
+        path = f"Repeat_{i}/GB_fold_data.csv"
+        tau, p = find_kendall_tau(path)
+        tau_vals = pd.DataFrame({"Repeat": [i], "tau": [tau], "p-value": [p]})
+        GB_tau_df.append(tau_vals)
+    GB_tau_df = pd.concat(GB_tau_df, ignore_index=True)
+    final_tau = GB_tau_df["tau"].mean()
+    std = GB_tau_df["tau"].std()
+    GB_tau_df.to_csv("GB_Kendall_tau.csv", sep='\t', index=False)
+    print(f"The overall tau value for GBLUP is {final_tau:.3f} ± {std:.3f}")
+
+    # Error statistics
+    GB_Error_df = None
+    for i in range(1, 11):
+        path = f"Repeat_{i}/GB_fold_data.csv"
+        df = prediction_error(path)
+        # Rename error columns
+        df.rename(columns={"Error": f"Error_{i}"}, inplace=True)
+        if GB_Error_df is None:
+            GB_Error_df = df.copy()
+        else:
+            GB_Error_df = pd.merge(GB_Error_df, df, on='Line', how='inner')
+    Error_cols = [col for col in GB_Error_df.columns if col.startswith("Error_")]
+    GB_Error_df["avg_error"] = GB_Error_df[Error_cols].mean(axis=1)
+    Error_cleaned = GB_Error_df[["Line", "avg_error"]].sort_values(by="avg_error", ascending=True)
+    Error_cleaned.to_csv("GB_Prediction_Error.csv", sep='\t', index=False)
