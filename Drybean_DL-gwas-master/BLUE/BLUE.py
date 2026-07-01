@@ -559,11 +559,11 @@ def prediction_error(path):
     new_df = df[["Line", "Error"]]
     return new_df
 
-def gblup_preprocessing(tsv_path):
+def gblup_preprocessing(tsv_path, pheno_path):
     vcf_path = tsv_path.replace("_processed.tsv", ".vcf")
     vcf_path = vcf_path.replace("LD_", "")
     matrix_path = vcf_preprocessing(vcf_path)
-    matrix_path = combine_pheno(matrix_path)
+    matrix_path = combine_pheno(matrix_path, pheno_path)
     matrix_path = dummy_folds_column(matrix_path)
     return matrix_path
 
@@ -693,7 +693,7 @@ if __name__ == '__main__':
     QA_input = dummy_folds_column(QA_input)
 
     if not args.summary:
-        GBLUP_input = gblup_preprocessing(QA_input)
+        GBLUP_input = gblup_preprocessing(QA_input, pheno_path)
     folds = [args.fold] if args.fold else range(1, NUM_FOLDS + 1)
 
     for i in range(1, 11):
