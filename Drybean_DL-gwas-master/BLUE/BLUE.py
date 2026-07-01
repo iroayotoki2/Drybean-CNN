@@ -609,6 +609,17 @@ def gblup_main(GBLUP_input, repeat, run_fold=None):
         G_val_train, y_val = G[np.ix_(valIdx, trainIdx)], PHENOTYPE[valIdx]
         G_test_train, y_test, testLines = G[np.ix_(testIdx, trainIdx)], PHENOTYPE[testIdx], Lines[
             testIdx]
+
+        print("G_train shape:", G_train.shape)
+        print("G_val_train shape:", G_val_train.shape)
+        print("y_train shape:", y_train.shape)
+        print("y_val shape:", y_val.shape)
+
+        print("NaN in G_train:", np.isnan(G_train).any())
+        print("NaN in G_val_train:", np.isnan(G_val_train).any())
+        print("NaN in y_train:", np.isnan(y_train).any())
+        print("Inf in y_train:", np.isinf(y_train).any())
+
         # Candidate regularization strengths
         candidate_lambdas = np.logspace(-4, 2, 20)
 
@@ -619,12 +630,16 @@ def gblup_main(GBLUP_input, repeat, run_fold=None):
         n = G_train.shape[0]
 
         for lam in candidate_lambdas:
-
-            # Regularize the genomic relationship matrix
             G_reg = G_train + lam * np.eye(n)
 
-            # Solve for training breeding values
+            print("NaN in G_reg:", np.isnan(G_reg).any())
+
             u = np.linalg.solve(G_reg, y_train)
+
+            print(f"λ = {lam}")
+            print("NaN in u:", np.isnan(u).any())
+            print("Inf in u:", np.isinf(u).any())
+            print("u min/max:", np.min(u), np.max(u))
 
             # Predict validation phenotypes
             y_val_pred = G_val_train @ u
