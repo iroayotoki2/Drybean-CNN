@@ -628,11 +628,20 @@ def gblup_main(GBLUP_input, repeat, run_fold=None):
             # Validation correlation
             corr = np.corrcoef(y_val, y_val_pred)[0, 1]
 
-            # Keep the best lambda
+            print(f"λ = {lam}")
+            print(f"corr = {corr}")
+            print(f"is NaN? {np.isnan(corr)}")
+
+            if np.isnan(corr):
+                continue
+
             if corr > best_corr:
                 best_corr = corr
                 best_lambda = lam
                 best_u = u
+
+        if best_lambda is None:
+            raise ValueError("No valid lambda produced a finite validation correlation.")
 
         print(f"Best λ = {best_lambda:.4f} | Validation correlation = {best_corr:.4f}")
 
