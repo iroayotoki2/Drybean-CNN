@@ -576,6 +576,10 @@ def gblup_main(GBLUP_input, repeat, run_fold=None):
 
     G = (Z @ Z.T) / denom
 
+    print(np.isnan(G).any())
+    print(np.isinf(G).any())
+    print(denom)
+
     fold_range = [run_fold] if run_fold else range(1, NUM_FOLDS + 1)
     for i in fold_range:
         print(f"\n🔁 Starting Repeat{repeat}fold {i} ...")
@@ -625,6 +629,20 @@ def gblup_main(GBLUP_input, repeat, run_fold=None):
             # Predict validation phenotypes
             y_val_pred = G_val_train @ u
 
+            print("y_val shape:", y_val.shape)
+            print("y_val_pred shape:", y_val_pred.shape)
+
+            print("y_val:")
+            print(y_val)
+
+            print("y_val_pred:")
+            print(y_val_pred)
+
+            print("std(y_val):", np.std(y_val))
+            print("std(y_val_pred):", np.std(y_val_pred))
+
+            print("NaN y_val:", np.isnan(y_val).any())
+            print("NaN y_val_pred:", np.isnan(y_val_pred).any())
             # Validation correlation
             corr = np.corrcoef(y_val, y_val_pred)[0, 1]
 
