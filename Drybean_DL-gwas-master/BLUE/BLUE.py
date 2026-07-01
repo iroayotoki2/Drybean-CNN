@@ -517,8 +517,13 @@ def csv_preprocessing(input_path, output_path=None):
 def combine_pheno(input_path, pheno_path, output_path=None):
     Geno = pd.read_csv(input_path, sep='\t')
     pheno = pd.read_csv(pheno_path, sep='\t')
+    Geno["Line"] = Geno["Line"].str.replace(" ", "_")
     pheno["Line"] = pheno["Line"].str.replace(" ", "_")
     merged_df = pd.merge(Geno, pheno, on='Line', how='left')
+
+    missing = merged_df["BLUEs"].isna().sum()
+    if missing > 0:
+        raise ValueError(f"{missing} phenotype values are missing after merging.")
 
     # Reorder columns
     # Using BLUE values without normalization
