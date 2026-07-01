@@ -570,6 +570,15 @@ def gblup_preprocessing(tsv_path, pheno_path):
 def gblup_main(GBLUP_input, repeat, run_fold=None):
     GB_corr = []
     SNP, PHENOTYPE, folds, snp_names, Lines = readData(GBLUP_input)
+
+    print("PHENOTYPE dtype:", PHENOTYPE.dtype)
+    print("Total NaNs in PHENOTYPE:", pd.isna(PHENOTYPE).sum())
+
+    if pd.isna(PHENOTYPE).any():
+        idx = np.where(pd.isna(PHENOTYPE))[0]
+        print("NaN indices:", idx)
+        print("Corresponding lines:", Lines[idx])
+
     p = SNP.mean(axis=0) / 2  # Allele frequencies
     Z = SNP - 2 * p  # Center genotypes
     denom = 2 * np.sum(p * (1 - p))  # VanRaden normalization
@@ -582,7 +591,7 @@ def gblup_main(GBLUP_input, repeat, run_fold=None):
 
     fold_range = [run_fold] if run_fold else range(1, NUM_FOLDS + 1)
     for i in fold_range:
-        print(f"\n🔁 Starting Repeat{repeat}fold {i} ...")
+        print(f"\n🔁 Starting GBLUP for Repeat{repeat}fold {i} ...")
 
         # Identify test fold
         testIdx = np.where(folds == i)[0]
@@ -609,6 +618,25 @@ def gblup_main(GBLUP_input, repeat, run_fold=None):
         G_val_train, y_val = G[np.ix_(valIdx, trainIdx)], PHENOTYPE[valIdx]
         G_test_train, y_test, testLines = G[np.ix_(testIdx, trainIdx)], PHENOTYPE[testIdx], Lines[
             testIdx]
+
+        bad = np.where(pd.isna(y_train))[0]
+
+        print("NaNs in y_train:", len(bad))
+        if len(bad) > 0:
+            print("Positions within y_train:", bad)
+            print("Original dataset indices:", trainIdx[bad])
+            print("Lines:", Lines[trainIdx[bad]])
+            print("Values:", y_train[bad])
+
+        print("trainIdx dtype:", trainIdx.dtype)
+        print("First 10 trainIdx:", trainIdx[:10])
+        print("Max trainIdx:", trainIdx.max())
+        print("Min trainIdx:", trainIdx.min())
+
+        for idx in trainIdx:
+            if pd.isna(PHENOTYPE[idx]):
+                print("Found NaN in original phenotype at index:", idx)
+                print("Line:", Lines[idx])
 
         print("G_train shape:", G_train.shape)
         print("G_val_train shape:", G_val_train.shape)
