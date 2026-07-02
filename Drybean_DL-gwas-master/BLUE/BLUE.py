@@ -726,6 +726,8 @@ if __name__ == '__main__':
 
     if not args.summary:
         GBLUP_input = gblup_preprocessing(QA_input, pheno_path)
+    else:
+        GBLUP_input = None
     folds = [args.fold] if args.fold else range(1, NUM_FOLDS + 1)
 
     for i in range(1, 11):
@@ -738,7 +740,7 @@ if __name__ == '__main__':
         else:
             for fold in folds:
                 main(IMP_input, QA_input, repeat=i, run_fold=fold)
-                gblup_main(GBLUP_input, repeat=i, run_fold=fold)
+                gblup_main(QA_input, repeat=i, run_fold=fold)
                 print(f"Repeat {i} fold {fold} complete")
     # Find average saliency for all repeats and extract top snps
     if args.summary:
