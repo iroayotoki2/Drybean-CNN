@@ -624,34 +624,8 @@ def gblup_main(GBLUP_input, repeat, run_fold=None):
         G_test_train, y_test, testLines = G[np.ix_(testIdx, trainIdx)], PHENOTYPE[testIdx], Lines[
             testIdx]
 
-        bad = np.where(pd.isna(y_train))[0]
-
-        print("NaNs in y_train:", len(bad))
-        if len(bad) > 0:
-            print("Positions within y_train:", bad)
-            print("Original dataset indices:", trainIdx[bad])
-            print("Lines:", Lines[trainIdx[bad]])
-            print("Values:", y_train[bad])
-
-        print("trainIdx dtype:", trainIdx.dtype)
-        print("First 10 trainIdx:", trainIdx[:10])
-        print("Max trainIdx:", trainIdx.max())
-        print("Min trainIdx:", trainIdx.min())
-
-        for idx in trainIdx:
-            if pd.isna(PHENOTYPE[idx]):
-                print("Found NaN in original phenotype at index:", idx)
-                print("Line:", Lines[idx])
-
-        print("G_train shape:", G_train.shape)
-        print("G_val_train shape:", G_val_train.shape)
-        print("y_train shape:", y_train.shape)
-        print("y_val shape:", y_val.shape)
-
-        print("NaN in G_train:", np.isnan(G_train).any())
-        print("NaN in G_val_train:", np.isnan(G_val_train).any())
-        print("NaN in y_train:", np.isnan(y_train).any())
-        print("Inf in y_train:", np.isinf(y_train).any())
+        mu = np.mean(y_train)
+        y_train_centered = y_train - mu
 
         # Candidate regularization strengths
         candidate_lambdas = np.logspace(-4, 2, 20)
@@ -667,30 +641,13 @@ def gblup_main(GBLUP_input, repeat, run_fold=None):
 
             print("NaN in G_reg:", np.isnan(G_reg).any())
 
-            u = np.linalg.solve(G_reg, y_train)
+            u = np.linalg.solve(G_reg, y_train_centered)
 
-            print(f"λ = {lam}")
-            print("NaN in u:", np.isnan(u).any())
-            print("Inf in u:", np.isinf(u).any())
-            print("u min/max:", np.min(u), np.max(u))
+
 
             # Predict validation phenotypes
-            y_val_pred = G_val_train @ u
+            y_val_pred = G_val_train @ u + mu
 
-            print("y_val shape:", y_val.shape)
-            print("y_val_pred shape:", y_val_pred.shape)
-
-            print("y_val:")
-            print(y_val)
-
-            print("y_val_pred:")
-            print(y_val_pred)
-
-            print("std(y_val):", np.std(y_val))
-            print("std(y_val_pred):", np.std(y_val_pred))
-
-            print("NaN y_val:", np.isnan(y_val).any())
-            print("NaN y_val_pred:", np.isnan(y_val_pred).any())
             # Validation correlation
             corr = np.corrcoef(y_val, y_val_pred)[0, 1]
 
@@ -712,7 +669,7 @@ def gblup_main(GBLUP_input, repeat, run_fold=None):
         print(f"Best λ = {best_lambda:.4f} | Validation correlation = {best_corr:.4f}")
 
         # Use the best model to predict the test set
-        y_test_pred = G_test_train @ best_u
+        y_test_pred = G_test_train @ best_u + mu
         test_corr = pearsonr(y_test_pred,y_test)[0]
         GB_corr.append(float(f'{test_corr:.4f}'))
         fold_pred = pd.DataFrame({"fold": i, "Line": testLines, "predicted": y_test_pred, "phenotype": y_test})
@@ -774,7 +731,8 @@ if __name__ == '__main__':
     for i in range(1, 11):
         assign_folds_to_file(IMP_input, seed=i)
         sync_folds_column(IMP_input, QA_input)
-        sync_folds_column(IMP_input,GBLUP_input)
+        if GBLUP_input:
+            sync_folds_column(IMP_input,GBLUP_input)
         if args.summary:
             run_saliency_summary(IMP_input=QA_input, QA_input=IMP_input, repeat=i)
         else:
