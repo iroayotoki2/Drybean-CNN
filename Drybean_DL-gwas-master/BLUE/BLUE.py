@@ -356,8 +356,8 @@ def run_saliency_summary(IMP_input, QA_input, repeat, interactive=False):
         else:
             print("❌ PCC log not found. Did folds run correctly?")
         if os.path.exists("GB_fold_pcc_log.csv"):
-            Gdf = pd.read_csv("fold_pcc_log.csv", header=None, names=["Repeat", "Fold", "PCC_GBLUP"])
-            Gdf = df.sort_values(["Repeat", "Fold"])
+            Gdf = pd.read_csv("GB_fold_pcc_log.csv", header=None, names=["Repeat", "Fold", "PCC_GBLUP"])
+            Gdf = Gdf.sort_values(["Repeat", "Fold"])
             Gdf.to_csv("GB_fold_pcc_summary.csv", index=False)
 
             print("✅ Summary CSV generated: GB_fold_pcc_summary.csv")
@@ -705,7 +705,7 @@ if __name__ == '__main__':
     IMP_input = args.IMP_file
     QA_input = args.QA_file
 
-    # Data cleaning by file format to produce tsvs for the pipline
+    # Data cleaning by file format to produce tsvs for the pipeline
     if IMP_input.endswith(".vcf"):
         IMP_input = vcf_preprocessing(IMP_input)
     elif IMP_input.endswith(".csv"):
