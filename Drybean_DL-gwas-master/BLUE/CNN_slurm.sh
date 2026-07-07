@@ -25,6 +25,7 @@ python ld_pruning.py --vcf imputed_GenotypicData.vcf
 python ld_pruning.py --vcf Raw_GenotypicData.vcf
 
 module load StdEnv/2023
+module load r/4.5.0
 module load python/3.10
 
 cd ~/scratch/Drybean-CNN

@@ -31,6 +31,13 @@ import matplotlib.pyplot as plt
 import math as m
 import keras.backend as K
 
+import rpy2
+from rpy2.robjects.packages import importr
+rrBLUP = importr("rrBLUP")
+from rpy2.robjects import default_converter
+from rpy2.robjects import numpy2ri
+from rpy2.robjects.conversion import localconverter
+
 os.environ["TF_XLA_FLAGS"] = "--tf_xla_auto_jit=2"  # New
 tf.config.set_visible_devices([], 'GPU')  # New
 gpus = tf.config.experimental.list_physical_devices('GPU')
@@ -355,6 +362,7 @@ def run_saliency_summary(IMP_input, QA_input, repeat, interactive=False):
             print("📈 Average PCC (non-imputed):", round(df['PCC_NonImputed'].mean(), 4))
         else:
             print("❌ PCC log not found. Did folds run correctly?")
+
         if os.path.exists("GB_fold_pcc_log.csv"):
             Gdf = pd.read_csv("GB_fold_pcc_log.csv", header=None, names=["Repeat", "Fold", "PCC_GBLUP"])
             Gdf = Gdf.sort_values(["Repeat", "Fold"])
@@ -366,6 +374,16 @@ def run_saliency_summary(IMP_input, QA_input, repeat, interactive=False):
         else:
             print("❌ GBLUP PCC log not found. Did folds run correctly?")
 
+        if os.path.exists("RB_fold_pcc_log.csv"):
+            df = pd.read_csv("RB_fold_pcc_log.csv", header=None, names=["Repeat", "Fold", "PCC_rrBLUP"])
+            df = df.sort_values(["Repeat", "Fold"])
+            df.to_csv("RB_fold_pcc_summary.csv", index=False)
+
+            print("✅ Summary CSV generated: RB_fold_pcc_summary.csv")
+            print("📈 Average PCC for rrBLUP:", round(df['PCC_rrBLUP'].mean(), 4))
+
+        else:
+            print("❌ GBLUP PCC log not found. Did folds run correctly?")
     print("✅ Average saliency map and plot generated.")
 
     export_top_k_saliency(snp_names, avg_saliency, k=len(snp_names), repeat=repeat)
@@ -689,6 +707,89 @@ def gblup_main(GBLUP_input, repeat, run_fold=None):
                 for fold in range(NUM_FOLDS):
                     writer.writerow([repeat, fold + 1, GB_corr[fold]])
 
+def run_rrblup(input, repeat, run_fold=None):
+    SNP, PHENOTYPE, folds, snp_names, Lines = readData(input)
+    RB_corr = []
+
+    u_file = "RRBLUP_u_effects.csv"
+
+    if not os.path.exists(u_file):
+        header = ["Repeat", "Fold"] + list(snp_names)
+        pd.DataFrame(columns=header).to_csv(u_file, index=False)
+
+    fold_range = [run_fold] if run_fold else range(1, NUM_FOLDS + 1)
+    for i in fold_range:
+        print(f"\n🔁 Starting GBLUP for Repeat{repeat}fold {i} ...")
+
+        # Identify test fold
+        testIdx = np.where(folds == i)[0]
+
+        # If NUM_FOLDS >= 3, use separate fold for validation
+        if NUM_FOLDS >= 3:
+            val_fold = (i % NUM_FOLDS) + 1
+            valIdx = np.where(folds == val_fold)[0]
+            trainIdx = np.where((folds != i) & (folds != val_fold))[0]
+        else:
+            # With 2 folds: split the other fold randomly into train/val
+            other_idx = np.where(folds != i)[0]
+            np.random.seed(repeat)
+            np.random.shuffle(other_idx)
+            val_size = int(0.2 * len(other_idx))
+            valIdx = other_idx[:val_size]
+            trainIdx = other_idx[val_size:]
+
+        if len(trainIdx) == 0 or len(valIdx) == 0:
+            raise ValueError(f"Fold {i}: Training or validation set is empty. Check NUM_FOLDS or data distribution.")
+
+        # Partition data
+        X_train, y_train =SNP[trainIdx], PHENOTYPE[trainIdx]
+        X_val, y_val = SNP[valIdx], PHENOTYPE[valIdx]
+        X_test, y_test, testLines = SNP[testIdx], PHENOTYPE[testIdx], Lines[testIdx]
+
+
+        with localconverter(default_converter + numpy2ri.converter):
+            fit = rrBLUP.mixed_solve(y=y_train, Z=X_train)
+
+            beta = np.array(fit.rx2("beta")).item()
+            u = np.array(fit.rx2("u")).flatten()
+        # Extract SNP effects
+        print("Number of SNP effects:", len(u))
+        print("Number of SNP names:", len(snp_names))
+        u_row = pd.DataFrame(
+            [[repeat, i] + list(u)],
+            columns=["Repeat", "Fold"] + list(snp_names)
+        )
+        # Append to CSV
+        u_row.to_csv(
+            u_file,
+            mode="a",
+            header=False,
+            index=False
+        )
+
+        y_val_pred = X_val @ u + beta
+        corr = np.corrcoef(y_val, y_val_pred)[0, 1]
+
+        y_test_pred = X_test @ u + beta
+        test_corr = pearsonr(y_test_pred, y_test)[0]
+        RB_corr.append(float(f'{test_corr:.4f}'))
+        fold_pred = pd.DataFrame({"fold": i, "Line": testLines, "predicted": y_test_pred, "phenotype": y_test})
+        fold_pred.to_csv(f"Repeat_{repeat}/RB_fold_data.csv", mode="a",
+                         header=not os.path.exists(f"Repeat_{repeat}/RB_fold_data.csv"), index=False)
+
+        if run_fold is not None:
+            with open("RB_fold_pcc_log.csv", "a", newline="") as file:
+                writer = csv.writer(file)
+                writer.writerow([repeat, i, RB_corr[0]])
+                print(f"✅ Saved fold {run_fold} to RB_fold_pcc_log.csv")
+
+        if run_fold is None:
+            with open("RB_fold_pcc_summary.csv", mode="w", newline="") as file:
+                writer = csv.writer(file)
+                writer.writerow(["Repeat", "Fold", "PCC_rrBLUP"])
+                for fold in range(NUM_FOLDS):
+                    writer.writerow([repeat, fold + 1, RB_corr[fold]])
+
 
 if __name__ == '__main__':
 
@@ -741,6 +842,7 @@ if __name__ == '__main__':
             for fold in folds:
                 main(IMP_input, QA_input, repeat=i, run_fold=fold)
                 gblup_main(QA_input, repeat=i, run_fold=fold)
+                run_rrblup(QA_input, repeat=i, run_fold=fold)
                 print(f"Repeat {i} fold {fold} complete")
     # Find average saliency for all repeats and extract top snps
     if args.summary:
@@ -758,6 +860,17 @@ if __name__ == '__main__':
         merged_df["avg_saliency"] = merged_df[saliency_cols].mean(axis=1)
         export_top_k_saliency(snp_names=merged_df["SNP"], saliency_values=merged_df["avg_saliency"])
         plot_average_saliency(avg_saliency=merged_df["avg_saliency"])
+
+        df = pd.read_csv("RRBLUP_u_effects.csv")
+        # Extract only SNP columns
+        u_matrix = df[snp_names]
+        summary = pd.DataFrame({
+            "SNP": snp_names,
+            "Mean_Effect": u_matrix.mean(axis=0).values,
+            "SD_Effect": u_matrix.std(axis=0).values,
+            "Abs_Mean_Effect": np.abs(u_matrix.mean(axis=0)).values
+        })
+        summary.to_csv("RRBLUP_SNP_summary.csv", index=False)
     else:
         # Compute kendall's tau for the experiment
         tau_df = []
@@ -816,3 +929,33 @@ if __name__ == '__main__':
         GB_Error_df["avg_error"] = GB_Error_df[Error_cols].mean(axis=1)
         Error_cleaned = GB_Error_df[["Line", "avg_error"]].sort_values(by="avg_error", ascending=True)
         Error_cleaned.to_csv("GB_Prediction_Error.csv", sep='\t', index=False)
+
+        #RRBLUP metrics
+        # Compute kendall's tau for the experiment
+        tau_df = []
+        for i in range(1, 11):
+            path = f"Repeat_{i}/RB_fold_data.csv"
+            tau, p = find_kendall_tau(path)
+            tau_vals = pd.DataFrame({"Repeat": [i], "tau": [tau], "p-value": [p]})
+            tau_df.append(tau_vals)
+        tau_df = pd.concat(tau_df, ignore_index=True)
+        final_tau = tau_df["tau"].mean()
+        std = tau_df["tau"].std()
+        tau_df.to_csv("RB_Kendall_tau.csv", sep='\t', index=False)
+        print(f"The overall tau value for rr-BLUP is {final_tau:.3f} ± {std:.3f}")
+
+        # Error statistics
+        Error_df = None
+        for i in range(1, 11):
+            path = f"Repeat_{i}/RB_fold_data.csv"
+            df = prediction_error(path)
+            # Rename error columns
+            df.rename(columns={"Error": f"Error_{i}"}, inplace=True)
+            if Error_df is None:
+                Error_df = df.copy()
+            else:
+                Error_df = pd.merge(Error_df, df, on='Line', how='inner')
+        Error_cols = [col for col in Error_df.columns if col.startswith("Error_")]
+        Error_df["avg_error"] = Error_df[Error_cols].mean(axis=1)
+        Error_cleaned = Error_df[["Line", "avg_error"]].sort_values(by="avg_error", ascending=True)
+        Error_cleaned.to_csv("RB_Prediction_Error.csv", sep='\t', index=False)
