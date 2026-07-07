@@ -749,7 +749,12 @@ def run_rrblup(input, repeat, run_fold=None):
 
         with localconverter(default_converter + numpy2ri.converter):
             fit = rrBLUP.mixed_solve(y=y_train, Z=X_train)
-            print(fit.names)
+            print(type(fit))
+            print(fit.names())
+
+            for name, value in zip(fit.names(), fit):
+                print(name, value)
+
             beta = np.array(fit["beta"]).item()
             u = np.array(fit["u"]).flatten()
         # Extract SNP effects
