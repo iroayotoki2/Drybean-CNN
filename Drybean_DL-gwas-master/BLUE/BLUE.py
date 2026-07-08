@@ -748,15 +748,10 @@ def run_rrblup(input, repeat, run_fold=None):
 
 
         with localconverter(default_converter + numpy2ri.converter):
-            fit = rrBLUP.mixed_solve(y=y_train, Z=X_train)
-            print(type(fit))
-            print(fit.names())
+            fit_dict = dict(zip(fit.names(), fit))
 
-            for name, value in zip(fit.names(), fit):
-                print(name, value)
-
-            beta = np.array(fit["beta"]).item()
-            u = np.array(fit["u"]).flatten()
+            beta = np.array(fit_dict["beta"]).item()
+            u = np.array(fit_dict["u"]).flatten()
         # Extract SNP effects
         print("Number of SNP effects:", len(u))
         print("Number of SNP names:", len(snp_names))
