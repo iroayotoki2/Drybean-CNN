@@ -748,6 +748,7 @@ def run_rrblup(input, repeat, run_fold=None):
 
 
         with localconverter(default_converter + numpy2ri.converter):
+            fit = rrBLUP.mixed_solve(y=y_train, Z=X_train)
             fit_dict = dict(zip(fit.names(), fit))
 
             beta = np.array(fit_dict["beta"]).item()
