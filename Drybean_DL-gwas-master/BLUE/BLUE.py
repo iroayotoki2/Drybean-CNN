@@ -154,7 +154,6 @@ def resnet(input):
     x = Conv1D(10, 4, padding='same', activation='linear', kernel_initializer='TruncatedNormal',
                kernel_regularizer=regularizers.l2(0.01), bias_regularizer=regularizers.l2(0.01))(x)
 
-    x = layers.Activation(isru)(x)
     x = Dropout(0.75)(x)
     x = Flatten()(x)
 
