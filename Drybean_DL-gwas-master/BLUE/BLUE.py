@@ -143,6 +143,7 @@ def resnet(input):
 
     x = Conv1D(10, 20, padding='same', activation='linear', kernel_initializer='TruncatedNormal',
                kernel_regularizer=regularizers.l2(0.01), bias_regularizer=regularizers.l2(0.01))(x)
+    x = layers.Activation(isru)(x)
 
     x = Dropout(0.75)(x)
 
@@ -153,12 +154,13 @@ def resnet(input):
     x = Conv1D(10, 4, padding='same', activation='linear', kernel_initializer='TruncatedNormal',
                kernel_regularizer=regularizers.l2(0.01), bias_regularizer=regularizers.l2(0.01))(x)
 
+    x = layers.Activation(isru)(x)
     x = Dropout(0.75)(x)
     x = Flatten()(x)
 
     x = Dropout(0.75)(x)
 
-    outputs = Dense(1, activation=isru, bias_regularizer=regularizers.l2(0.01), kernel_initializer='TruncatedNormal',
+    outputs = Dense(1, activation='linear', bias_regularizer=regularizers.l2(0.01), kernel_initializer='TruncatedNormal',
                     name='out')(x)
 
     model = Model(inputs=inputs, outputs=outputs)
@@ -265,7 +267,7 @@ def collect_saliency_across_folds(imp_SNP, imp_pheno, folds, repeat):
     return np.mean(np.stack(all_saliencies), axis=0)  # shape: (num_SNPs,)
 
 
-a = 0.00000001  # height
+a = 0.03  # height
 
 
 def isru(x):
@@ -864,6 +866,7 @@ if __name__ == '__main__':
 
         df = pd.read_csv("RRBLUP_u_effects.csv")
         # Extract only SNP columns
+        snp_names = df.columns[2:]
         u_matrix = df[snp_names]
         summary = pd.DataFrame({
             "SNP": snp_names,
