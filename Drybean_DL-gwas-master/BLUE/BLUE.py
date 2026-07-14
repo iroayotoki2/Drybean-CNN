@@ -792,7 +792,60 @@ def run_rrblup(input, repeat, run_fold=None):
                 for fold in range(NUM_FOLDS):
                     writer.writerow([repeat, fold + 1, RB_corr[fold]])
 
+def top_mean_predictions(filename, model, k=15):
+    merged_df = None
+    for i in range(1, NUM_REPEATS + 1):
+        df = pd.read_csv(f"Repeat_{i}/{filename}")
+        # Keep only the sample ID and predicted value
+        repeat_df = df[["Line", "predicted"]].copy()
+        repeat_df.rename(columns={"predicted": f"repeat_{i}"}, inplace=True)
+        if merged_df is None:
+            merged_df = repeat_df
+        else:
+            merged_df = merged_df.merge(repeat_df, on="Line")
 
+    # Average prediction across repeats
+    merged_df["avg_prediction"] = merged_df.iloc[:, 1:].mean(axis=1)
+    # Rank from highest to lowest
+    top_k_df = (
+        merged_df
+        .sort_values("avg_prediction", ascending=False)
+        .head(k)
+    )
+    top_k_df.to_csv(f"{model}_mean_prediction_ranking.csv", index=False)
+
+def top_selection_frequency(filename, model, k=10):
+    frequency = {}
+    for i in range(1, NUM_REPEATS + 1):
+        df = pd.read_csv(f"Repeat_{i}/{filename}")
+        # Get the top k predictions for this repeat
+        top_k = (
+            df.sort_values("predicted", ascending=False)
+              .head(k)
+        )
+        # Count appearances
+        for line in top_k["Line"]:
+            if line in frequency:
+                frequency[line] += 1
+            else:
+                frequency[line] = 1
+
+    # Convert dictionary to dataframe
+    frequency_df = pd.DataFrame(
+        frequency.items(),
+        columns=["Line", "Top_10_Frequency"]
+    )
+
+    # Rank by frequency
+    frequency_df = frequency_df.sort_values(
+        "Top_10_Frequency",
+        ascending=False
+    )
+
+    frequency_df.to_csv(
+        f"{model}_top_{k}_selection_frequency.csv",
+        index=False
+    )
 if __name__ == '__main__':
 
     # os.chdir("MOISTURE")
@@ -962,3 +1015,10 @@ if __name__ == '__main__':
         Error_df["avg_error"] = Error_df[Error_cols].mean(axis=1)
         Error_cleaned = Error_df[["Line", "avg_error"]].sort_values(by="avg_error", ascending=True)
         Error_cleaned.to_csv("RB_Prediction_Error.csv", sep='\t', index=False)
+
+        top_mean_predictions(filename="fold_data.csv",model="CNN")
+        top_selection_frequency(filename="fold_data.csv",model="CNN")
+        top_mean_predictions(filename="GB_fold_data.csv", model="GBLUP")
+        top_selection_frequency(filename="GB_fold_data.csv", model="GBLUP")
+        top_mean_predictions(filename="RB_fold_data.csv", model="RRBLUP")
+        top_selection_frequency(filename="RB_fold_data.csv", model="RRBLUP")
