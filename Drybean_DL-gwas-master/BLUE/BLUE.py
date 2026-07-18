@@ -135,6 +135,18 @@ def readData(input):
     return SNP.astype(np.int8), pheno, folds, snp_names, Lines
 
 
+def attention_block(x):
+    attn = MultiHeadAttention(
+        num_heads=4,
+        key_dim=10
+    )(x,x)
+
+    x = Add()([x,attn])
+
+    x = LayerNormalization()(x)
+
+    return x
+
 def resnet(input):
     inputs = Input(shape=(input.shape[1], nb_classes))
 
@@ -155,6 +167,9 @@ def resnet(input):
                kernel_regularizer=regularizers.l2(0.01), bias_regularizer=regularizers.l2(0.01))(x)
 
     x = Dropout(0.75)(x)
+
+    x = attention_block(x)
+
     x = Flatten()(x)
 
     x = Dropout(0.75)(x)
