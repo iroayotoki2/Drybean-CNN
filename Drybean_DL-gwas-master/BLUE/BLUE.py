@@ -168,8 +168,6 @@ def resnet(input):
 
     x = Dropout(0.75)(x)
 
-    x = attention_block(x)
-
     x = Flatten()(x)
 
     x = Dropout(0.75)(x)
