@@ -909,8 +909,8 @@ if __name__ == '__main__':
         else:
             for fold in folds:
                 main(IMP_input, QA_input, repeat=i, run_fold=fold)
-                gblup_main(QA_input, repeat=i, run_fold=fold)
-                run_rrblup(QA_input, repeat=i, run_fold=fold)
+                gblup_main(GBLUP_input, repeat=i, run_fold=fold)
+                run_rrblup(GBLUP_input, repeat=i, run_fold=fold)
                 print(f"Repeat {i} fold {fold} complete")
     # Find average saliency for all repeats and extract top snps
     if args.summary:
