@@ -57,4 +57,4 @@ if __name__ == "__main__":
     parser.add_argument("--vcf", required=True, help="Path to targeted VCF file")
     args = parser.parse_args()
 
-    inline_vcf_ld_prune(args.vcf, window_snps=50, step_snps=5, r2_threshold=0.95)
+    inline_vcf_ld_prune(args.vcf, window_snps=50, step_snps=5, r2_threshold=0.90)
