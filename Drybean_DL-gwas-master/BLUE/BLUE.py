@@ -880,43 +880,99 @@ def run_cropformer(input, repeat, run_fold=None, max_features=10000, epochs=100,
     from sklearn.feature_selection import mutual_info_regression
     from sklearn.preprocessing import StandardScaler
 
-    class CropformerSelfAttention(nn.Module):
-        def __init__(self, num_attention_heads, input_size, hidden_size, output_dim=1, kernel_size=3,
-                     hidden_dropout_prob=0.5, attention_probs_dropout_prob=0.5):
-            super(CropformerSelfAttention, self).__init__()
-            self.num_attention_heads = num_attention_heads
-            self.attention_head_size = int(hidden_size / num_attention_heads)
-            self.all_head_size = hidden_size
+    class Cropformer(nn.Module):
+        def __init__(
+                self,
+                input_size,
+                cnn_channels=64,
+                embed_dim=64,
+                num_heads=8,
+                dropout=0.5,
+                output_dim=1
+        ):
+            super(Cropformer, self).__init__()
 
-            self.query = nn.Linear(input_size, self.all_head_size)
-            self.key = nn.Linear(input_size, self.all_head_size)
-            self.value = nn.Linear(input_size, self.all_head_size)
+            # CNN feature extractor
+            self.cnn = nn.Sequential(
+                nn.Conv1d(
+                    in_channels=1,
+                    out_channels=cnn_channels,
+                    kernel_size=3,
+                    padding=1
+                ),
+                nn.ReLU(),
+                nn.BatchNorm1d(cnn_channels),
 
-            self.attn_dropout = nn.Dropout(attention_probs_dropout_prob)
-            self.out_dropout = nn.Dropout(hidden_dropout_prob)
-            self.dense = nn.Linear(hidden_size, input_size)
-            self.layer_norm = nn.LayerNorm(input_size, eps=1e-12)
-            self.relu = nn.ReLU()
-            self.out = nn.Linear(input_size, output_dim)
-            self.cnn = nn.Conv1d(1, 1, kernel_size, stride=1, padding=kernel_size // 2)
+                nn.Conv1d(
+                    in_channels=cnn_channels,
+                    out_channels=embed_dim,
+                    kernel_size=3,
+                    padding=1
+                ),
+                nn.ReLU()
+            )
 
-        def forward(self, input_tensor):
-            cnn_hidden = self.cnn(input_tensor.view(input_tensor.size(0), 1, -1))
-            input_tensor = cnn_hidden
-            mixed_query_layer = self.query(input_tensor)
-            mixed_key_layer = self.key(input_tensor)
-            mixed_value_layer = self.value(input_tensor)
+            # Multi-head self attention
+            self.attention = nn.MultiheadAttention(
+                embed_dim=embed_dim,
+                num_heads=num_heads,
+                dropout=dropout,
+                batch_first=True
+            )
 
-            attention_scores = torch.matmul(mixed_query_layer, mixed_key_layer.transpose(-1, -2))
-            attention_scores = attention_scores / np.sqrt(self.attention_head_size)
-            attention_probs = torch.softmax(attention_scores, dim=-1)
-            attention_probs = self.attn_dropout(attention_probs)
+            self.norm1 = nn.LayerNorm(embed_dim)
 
-            context_layer = torch.matmul(attention_probs, mixed_value_layer)
-            hidden_states = self.dense(context_layer)
-            hidden_states = self.out_dropout(hidden_states)
-            hidden_states = self.layer_norm(hidden_states + input_tensor)
-            return self.out(self.relu(hidden_states.view(hidden_states.size(0), -1)))
+            # Transformer feed-forward network
+            self.ffn = nn.Sequential(
+                nn.Linear(embed_dim, embed_dim * 4),
+                nn.GELU(),
+                nn.Dropout(dropout),
+                nn.Linear(embed_dim * 4, embed_dim)
+            )
+
+            self.norm2 = nn.LayerNorm(embed_dim)
+
+            # Regression head
+            self.output = nn.Sequential(
+                nn.Linear(embed_dim, 32),
+                nn.ReLU(),
+                nn.Dropout(dropout),
+                nn.Linear(32, output_dim)
+            )
+
+        def forward(self, x):
+            # x:
+            # (batch, SNPs)
+
+            x = x.unsqueeze(1)
+
+            # CNN:
+            # (batch, channels, SNPs)
+            x = self.cnn(x)
+
+            # Attention expects:
+            # (batch, sequence_length, embedding)
+            x = x.transpose(1, 2)
+
+            # Self attention
+            attn_out, _ = self.attention(
+                x,
+                x,
+                x
+            )
+
+            x = self.norm1(x + attn_out)
+
+            # Feed-forward block
+            ffn_out = self.ffn(x)
+
+            x = self.norm2(x + ffn_out)
+
+            # Pool SNP representations
+            x = torch.mean(x, dim=1)
+
+            # Predict phenotype
+            return self.output(x)
 
     def select_and_pad_features(train_x, val_x, test_x, train_y, snp_names, feature_count):
         selected_indices = np.arange(train_x.shape[1])
@@ -984,14 +1040,12 @@ def run_cropformer(input, repeat, run_fold=None, max_features=10000, epochs=100,
         val_loader = DataLoader(val_data, batch_size=batch_size, shuffle=False)
         test_loader = DataLoader(test_data, batch_size=batch_size, shuffle=False)
 
-        model = CropformerSelfAttention(
-            num_attention_heads=8,
-            input_size=max_features,
-            hidden_size=64,
-            output_dim=1,
-            kernel_size=3,
-            hidden_dropout_prob=0.5,
-            attention_probs_dropout_prob=0.5
+
+    model = Cropformer(
+        input_size=max_features,
+        cnn_channels=32,
+        embed_dim=32,
+        num_heads=4
         ).to(device)
         optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
         loss_function = nn.MSELoss()
