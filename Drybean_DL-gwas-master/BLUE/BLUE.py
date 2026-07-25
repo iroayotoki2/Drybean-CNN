@@ -859,6 +859,9 @@ def top_selection_frequency(filename, model, k=10):
         f"{model}_top_{k}_selection_frequency.csv",
         index=False
     )
+
+
+def run_cropformer(input, repeat, fold):
 if __name__ == '__main__':
 
     # os.chdir("MOISTURE")
