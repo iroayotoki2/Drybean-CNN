@@ -400,6 +400,17 @@ def run_saliency_summary(IMP_input, QA_input, repeat, interactive=False):
             print("❌ GBLUP PCC log not found. Did folds run correctly?")
     print("✅ Average saliency map and plot generated.")
 
+    if repeat == NUM_REPEATS:
+        if os.path.exists("CF_fold_pcc_log.csv"):
+            df = pd.read_csv("CF_fold_pcc_log.csv", header=None, names=["Repeat", "Fold", "PCC_Cropformer"])
+            df = df.sort_values(["Repeat", "Fold"])
+            df.to_csv("CF_fold_pcc_summary.csv", index=False)
+
+            print("Summary CSV generated: CF_fold_pcc_summary.csv")
+            print("Average PCC for Cropformer:", round(df['PCC_Cropformer'].mean(), 4))
+        else:
+            print("Cropformer PCC log not found. Did Cropformer folds run correctly?")
+
     export_top_k_saliency(snp_names, avg_saliency, k=len(snp_names), repeat=repeat)
 
     # Interactive SNP viewer
@@ -861,7 +872,198 @@ def top_selection_frequency(filename, model, k=10):
     )
 
 
-def run_cropformer(input, repeat, fold):
+def run_cropformer(input, repeat, run_fold=None, max_features=10000, epochs=100, batch_size=32, patience=5):
+    import gc
+    import torch
+    import torch.nn as nn
+    from torch.utils.data import DataLoader, TensorDataset
+    from sklearn.feature_selection import mutual_info_regression
+    from sklearn.preprocessing import StandardScaler
+
+    class CropformerSelfAttention(nn.Module):
+        def __init__(self, num_attention_heads, input_size, hidden_size, output_dim=1, kernel_size=3,
+                     hidden_dropout_prob=0.5, attention_probs_dropout_prob=0.5):
+            super(CropformerSelfAttention, self).__init__()
+            self.num_attention_heads = num_attention_heads
+            self.attention_head_size = int(hidden_size / num_attention_heads)
+            self.all_head_size = hidden_size
+
+            self.query = nn.Linear(input_size, self.all_head_size)
+            self.key = nn.Linear(input_size, self.all_head_size)
+            self.value = nn.Linear(input_size, self.all_head_size)
+
+            self.attn_dropout = nn.Dropout(attention_probs_dropout_prob)
+            self.out_dropout = nn.Dropout(hidden_dropout_prob)
+            self.dense = nn.Linear(hidden_size, input_size)
+            self.layer_norm = nn.LayerNorm(input_size, eps=1e-12)
+            self.relu = nn.ReLU()
+            self.out = nn.Linear(input_size, output_dim)
+            self.cnn = nn.Conv1d(1, 1, kernel_size, stride=1, padding=kernel_size // 2)
+
+        def forward(self, input_tensor):
+            cnn_hidden = self.cnn(input_tensor.view(input_tensor.size(0), 1, -1))
+            input_tensor = cnn_hidden
+            mixed_query_layer = self.query(input_tensor)
+            mixed_key_layer = self.key(input_tensor)
+            mixed_value_layer = self.value(input_tensor)
+
+            attention_scores = torch.matmul(mixed_query_layer, mixed_key_layer.transpose(-1, -2))
+            attention_scores = attention_scores / np.sqrt(self.attention_head_size)
+            attention_probs = torch.softmax(attention_scores, dim=-1)
+            attention_probs = self.attn_dropout(attention_probs)
+
+            context_layer = torch.matmul(attention_probs, mixed_value_layer)
+            hidden_states = self.dense(context_layer)
+            hidden_states = self.out_dropout(hidden_states)
+            hidden_states = self.layer_norm(hidden_states + input_tensor)
+            return self.out(self.relu(hidden_states.view(hidden_states.size(0), -1)))
+
+    def select_and_pad_features(train_x, val_x, test_x, train_y, snp_names, feature_count):
+        selected_indices = np.arange(train_x.shape[1])
+        if train_x.shape[1] > feature_count:
+            scores = mutual_info_regression(train_x, train_y, random_state=repeat)
+            selected_indices = np.argsort(scores)[-feature_count:]
+            train_x = train_x[:, selected_indices]
+            val_x = val_x[:, selected_indices]
+            test_x = test_x[:, selected_indices]
+        elif train_x.shape[1] < feature_count:
+            missing = feature_count - train_x.shape[1]
+            train_x = np.pad(train_x, ((0, 0), (0, missing)), mode="constant")
+            val_x = np.pad(val_x, ((0, 0), (0, missing)), mode="constant")
+            test_x = np.pad(test_x, ((0, 0), (0, missing)), mode="constant")
+
+        selected_snps = pd.DataFrame({"SNP": np.array(snp_names)[selected_indices]})
+        return train_x, val_x, test_x, selected_snps
+
+    SNP, PHENOTYPE, folds, snp_names, Lines = readData(input)
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    cf_corr = []
+    fold_range = [run_fold] if run_fold else range(1, NUM_FOLDS + 1)
+
+    os.makedirs(f"Repeat_{repeat}/model_CF", exist_ok=True)
+
+    for i in fold_range:
+        print(f"\nStarting Cropformer for Repeat {repeat} fold {i} ...")
+        np.random.seed(repeat * 100 + i)
+        torch.manual_seed(repeat * 100 + i)
+
+        testIdx = np.where(folds == i)[0]
+        if NUM_FOLDS >= 3:
+            val_fold = (i % NUM_FOLDS) + 1
+            valIdx = np.where(folds == val_fold)[0]
+            trainIdx = np.where((folds != i) & (folds != val_fold))[0]
+        else:
+            other_idx = np.where(folds != i)[0]
+            np.random.shuffle(other_idx)
+            val_size = int(0.2 * len(other_idx))
+            valIdx = other_idx[:val_size]
+            trainIdx = other_idx[val_size:]
+
+        if len(trainIdx) == 0 or len(valIdx) == 0:
+            raise ValueError(f"Fold {i}: Training or validation set is empty. Check NUM_FOLDS or data distribution.")
+
+        trainX, trainY = SNP[trainIdx].astype(np.float32), PHENOTYPE[trainIdx].astype(np.float32)
+        valX, valY = SNP[valIdx].astype(np.float32), PHENOTYPE[valIdx].astype(np.float32)
+        testX, testY, testLines = SNP[testIdx].astype(np.float32), PHENOTYPE[testIdx].astype(np.float32), Lines[testIdx]
+
+        trainX, valX, testX, selected_snps = select_and_pad_features(trainX, valX, testX, trainY, snp_names, max_features)
+        selected_snps.to_csv(f"Repeat_{repeat}/model_CF/selected_snps_fold_{i}.csv", index=False)
+
+        scaler = StandardScaler()
+        trainX = scaler.fit_transform(trainX)
+        valX = scaler.transform(valX)
+        testX = scaler.transform(testX)
+
+        train_data = TensorDataset(torch.from_numpy(trainX).float(), torch.from_numpy(trainY).float().reshape(-1, 1))
+        val_data = TensorDataset(torch.from_numpy(valX).float(), torch.from_numpy(valY).float().reshape(-1, 1))
+        test_data = TensorDataset(torch.from_numpy(testX).float(), torch.from_numpy(testY).float().reshape(-1, 1))
+
+        generator = torch.Generator()
+        generator.manual_seed(repeat * 100 + i)
+        train_loader = DataLoader(train_data, batch_size=batch_size, shuffle=True, generator=generator)
+        val_loader = DataLoader(val_data, batch_size=batch_size, shuffle=False)
+        test_loader = DataLoader(test_data, batch_size=batch_size, shuffle=False)
+
+        model = CropformerSelfAttention(
+            num_attention_heads=8,
+            input_size=max_features,
+            hidden_size=64,
+            output_dim=1,
+            kernel_size=3,
+            hidden_dropout_prob=0.5,
+            attention_probs_dropout_prob=0.5
+        ).to(device)
+        optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
+        loss_function = nn.MSELoss()
+
+        best_val_loss = np.inf
+        best_state = None
+        epochs_without_improvement = 0
+
+        for epoch in range(epochs):
+            model.train()
+            for x_batch, y_batch in train_loader:
+                x_batch = x_batch.to(device)
+                y_batch = y_batch.to(device)
+                optimizer.zero_grad()
+                loss = loss_function(model(x_batch), y_batch)
+                loss.backward()
+                optimizer.step()
+
+            model.eval()
+            val_losses = []
+            with torch.no_grad():
+                for x_batch, y_batch in val_loader:
+                    x_batch = x_batch.to(device)
+                    y_batch = y_batch.to(device)
+                    val_losses.append(loss_function(model(x_batch), y_batch).item())
+
+            val_loss = float(np.mean(val_losses))
+            if val_loss < best_val_loss:
+                best_val_loss = val_loss
+                best_state = {k: v.detach().cpu().clone() for k, v in model.state_dict().items()}
+                epochs_without_improvement = 0
+            else:
+                epochs_without_improvement += 1
+                if epochs_without_improvement >= patience:
+                    break
+
+        if best_state is not None:
+            model.load_state_dict(best_state)
+        torch.save(model.state_dict(), f"Repeat_{repeat}/model_CF/model_{i}.pth")
+
+        model.eval()
+        predictions = []
+        with torch.no_grad():
+            for x_batch, _ in test_loader:
+                pred = model(x_batch.to(device))
+                predictions.extend(pred.detach().cpu().numpy().reshape(-1).tolist())
+
+        test_corr = pearsonr(predictions, testY)[0]
+        cf_corr.append(float(f"{test_corr:.4f}"))
+        fold_pred = pd.DataFrame({"fold": i, "Line": testLines, "predicted": predictions, "phenotype": testY})
+        fold_pred.to_csv(f"Repeat_{repeat}/CF_fold_data.csv", mode="a",
+                         header=not os.path.exists(f"Repeat_{repeat}/CF_fold_data.csv"), index=False)
+        print(f"Cropformer Repeat {repeat} fold {i} PCC: {test_corr:.4f}")
+
+        del model, train_data, val_data, test_data, train_loader, val_loader, test_loader
+        gc.collect()
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+
+    if run_fold is not None:
+        with open("CF_fold_pcc_log.csv", "a", newline="") as file:
+            writer = csv.writer(file)
+            writer.writerow([repeat, run_fold, cf_corr[0]])
+            print(f"Saved Cropformer fold {run_fold} to CF_fold_pcc_log.csv")
+
+    if run_fold is None:
+        with open("CF_fold_pcc_summary.csv", mode="w", newline="") as file:
+            writer = csv.writer(file)
+            writer.writerow(["Repeat", "Fold", "PCC_Cropformer"])
+            for fold in range(NUM_FOLDS):
+                writer.writerow([repeat, fold + 1, cf_corr[fold]])
+
 if __name__ == '__main__':
 
     # os.chdir("MOISTURE")
@@ -872,6 +1074,9 @@ if __name__ == '__main__':
     parser.add_argument('--pheno', help="Phenotype file")
     parser.add_argument('--fold', type=int, default=None, help="Fold number (1–10)")
     parser.add_argument('--summary', action='store_true', help="Run saliency summary after all folds")
+    parser.add_argument('--skip-cropformer', action='store_true', help="Skip Cropformer benchmark")
+    parser.add_argument('--cropformer-epochs', type=int, default=100, help="Maximum Cropformer training epochs")
+    parser.add_argument('--cropformer-max-features', type=int, default=10000, help="Cropformer SNP feature count after train-only selection/padding")
     args = parser.parse_args()
 
     IMP_input = args.IMP_file
@@ -914,6 +1119,14 @@ if __name__ == '__main__':
                 main(IMP_input, QA_input, repeat=i, run_fold=fold)
                 gblup_main(GBLUP_input, repeat=i, run_fold=fold)
                 run_rrblup(GBLUP_input, repeat=i, run_fold=fold)
+                if not args.skip_cropformer:
+                    run_cropformer(
+                        QA_input,
+                        repeat=i,
+                        run_fold=fold,
+                        max_features=args.cropformer_max_features,
+                        epochs=args.cropformer_epochs
+                    )
                 print(f"Repeat {i} fold {fold} complete")
     # Find average saliency for all repeats and extract top snps
     if args.summary:
@@ -1038,3 +1251,32 @@ if __name__ == '__main__':
         top_selection_frequency(filename="GB_fold_data.csv", model="GBLUP")
         top_mean_predictions(filename="RB_fold_data.csv", model="RRBLUP")
         top_selection_frequency(filename="RB_fold_data.csv", model="RRBLUP")
+        if not args.skip_cropformer:
+            tau_df = []
+            for i in range(1, 11):
+                path = f"Repeat_{i}/CF_fold_data.csv"
+                tau, p = find_kendall_tau(path)
+                tau_vals = pd.DataFrame({"Repeat": [i], "tau": [tau], "p-value": [p]})
+                tau_df.append(tau_vals)
+            tau_df = pd.concat(tau_df, ignore_index=True)
+            final_tau = tau_df["tau"].mean()
+            std = tau_df["tau"].std()
+            tau_df.to_csv("CF_Kendall_tau.csv", sep='\t', index=False)
+            print(f"The overall tau value for Cropformer is {final_tau:.3f} Â± {std:.3f}")
+
+            Error_df = None
+            for i in range(1, 11):
+                path = f"Repeat_{i}/CF_fold_data.csv"
+                df = prediction_error(path)
+                df.rename(columns={"Error": f"Error_{i}"}, inplace=True)
+                if Error_df is None:
+                    Error_df = df.copy()
+                else:
+                    Error_df = pd.merge(Error_df, df, on='Line', how='inner')
+            Error_cols = [col for col in Error_df.columns if col.startswith("Error_")]
+            Error_df["avg_error"] = Error_df[Error_cols].mean(axis=1)
+            Error_cleaned = Error_df[["Line", "avg_error"]].sort_values(by="avg_error", ascending=True)
+            Error_cleaned.to_csv("CF_Prediction_Error.csv", sep='\t', index=False)
+
+            top_mean_predictions(filename="CF_fold_data.csv", model="Cropformer")
+            top_selection_frequency(filename="CF_fold_data.csv", model="Cropformer")

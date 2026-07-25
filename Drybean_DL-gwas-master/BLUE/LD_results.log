@@ -1,0 +1,28 @@
+PLINK v2.0.0-a.7LM AVX2 Intel (10 Jan 2026)
+Options in effect:
+  --ld-window 99999
+  --ld-window-kb 1000
+  --ld-window-r2 0
+  --out LD_results
+  --pfile drybean_unique
+  --r2-unphased
+
+Hostname: iroayo-VirtualBox
+Working directory: /home/iroayo/PycharmProjects/Drybean-CNN/Drybean_DL-gwas-master/BLUE
+Start time: Tue Jul 21 09:08:36 2026
+
+Random number seed: 1784639316
+10376 MiB RAM detected, ~5306 available; reserving 5188 MiB for main workspace.
+Using up to 4 compute threads.
+78 samples (0 females, 0 males, 78 ambiguous; 78 founders) loaded from
+drybean_unique.psam.
+8280 variants loaded from drybean_unique.pvar.
+Note: No phenotype data present.
+Calculating allele frequencies... done.
+Running --r2-unphased with the following filters:
+  --ld-window: 99999
+  --ld-window-kb: 1000
+  --ld-window-r2: 0
+--r2-unphased: Results written to LD_results.vcor .
+
+End time: Tue Jul 21 09:08:36 2026
