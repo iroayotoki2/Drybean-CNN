@@ -911,6 +911,8 @@ def run_cropformer(input, repeat, run_fold=None, max_features=10000, epochs=100,
                 ),
                 nn.ReLU()
             )
+            # Reduce SNP dimension before attention
+            self.pool = nn.AdaptiveAvgPool1d(256)
 
             # Multi-head self attention
             self.attention = nn.MultiheadAttention(
@@ -953,6 +955,9 @@ def run_cropformer(input, repeat, run_fold=None, max_features=10000, epochs=100,
             # Attention expects:
             # (batch, sequence_length, embedding)
             x = x.transpose(1, 2)
+
+            # (batch, embed_dim, SNPs)
+            x = self.pool(x)
 
             # Self attention
             attn_out, _ = self.attention(
@@ -1167,8 +1172,8 @@ if __name__ == '__main__':
         else:
             for fold in folds:
                 main(IMP_input, QA_input, repeat=i, run_fold=fold)
-                gblup_main(GBLUP_input, repeat=i, run_fold=fold)
-                run_rrblup(GBLUP_input, repeat=i, run_fold=fold)
+                gblup_main(QA_input, repeat=i, run_fold=fold)
+                run_rrblup(QA_input, repeat=i, run_fold=fold)
                 if not args.skip_cropformer:
                     run_cropformer(
                         QA_input,
