@@ -1037,65 +1037,65 @@ def run_cropformer(input, repeat, run_fold=None, max_features=10000, epochs=100,
         test_loader = DataLoader(test_data, batch_size=batch_size, shuffle=False)
 
 
-    model = Cropformer(input_size=max_features,cnn_channels=32,embed_dim=32,num_heads=4).to(device)
+        model = Cropformer(input_size=max_features,cnn_channels=32,embed_dim=32,num_heads=4).to(device)
 
-    optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
-    loss_function = nn.MSELoss()
+        optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
+        loss_function = nn.MSELoss()
 
-    best_val_loss = np.inf
-    best_state = None
-    epochs_without_improvement = 0
+        best_val_loss = np.inf
+        best_state = None
+        epochs_without_improvement = 0
 
-    for epoch in range(epochs):
-        model.train()
-        for x_batch, y_batch in train_loader:
-            x_batch = x_batch.to(device)
-            y_batch = y_batch.to(device)
-            optimizer.zero_grad()
-            loss = loss_function(model(x_batch), y_batch)
-            loss.backward()
-            optimizer.step()
-
-        model.eval()
-        val_losses = []
-        with torch.no_grad():
-            for x_batch, y_batch in val_loader:
+        for epoch in range(epochs):
+            model.train()
+            for x_batch, y_batch in train_loader:
                 x_batch = x_batch.to(device)
                 y_batch = y_batch.to(device)
-                val_losses.append(loss_function(model(x_batch), y_batch).item())
+                optimizer.zero_grad()
+                loss = loss_function(model(x_batch), y_batch)
+                loss.backward()
+                optimizer.step()
 
-        val_loss = float(np.mean(val_losses))
-        if val_loss < best_val_loss:
-            best_val_loss = val_loss
-            best_state = {k: v.detach().cpu().clone() for k, v in model.state_dict().items()}
-            epochs_without_improvement = 0
-        else:
-            epochs_without_improvement += 1
-            if epochs_without_improvement >= patience:
-                break
+            model.eval()
+            val_losses = []
+            with torch.no_grad():
+                for x_batch, y_batch in val_loader:
+                    x_batch = x_batch.to(device)
+                    y_batch = y_batch.to(device)
+                    val_losses.append(loss_function(model(x_batch), y_batch).item())
 
-        if best_state is not None:
-            model.load_state_dict(best_state)
-        torch.save(model.state_dict(), f"Repeat_{repeat}/model_CF/model_{i}.pth")
+            val_loss = float(np.mean(val_losses))
+            if val_loss < best_val_loss:
+                best_val_loss = val_loss
+                best_state = {k: v.detach().cpu().clone() for k, v in model.state_dict().items()}
+                epochs_without_improvement = 0
+            else:
+                epochs_without_improvement += 1
+                if epochs_without_improvement >= patience:
+                    break
 
-        model.eval()
-        predictions = []
-        with torch.no_grad():
-            for x_batch, _ in test_loader:
-                pred = model(x_batch.to(device))
-                predictions.extend(pred.detach().cpu().numpy().reshape(-1).tolist())
+            if best_state is not None:
+                model.load_state_dict(best_state)
+            torch.save(model.state_dict(), f"Repeat_{repeat}/model_CF/model_{i}.pth")
 
-        test_corr = pearsonr(predictions, testY)[0]
-        cf_corr.append(float(f"{test_corr:.4f}"))
-        fold_pred = pd.DataFrame({"fold": i, "Line": testLines, "predicted": predictions, "phenotype": testY})
-        fold_pred.to_csv(f"Repeat_{repeat}/CF_fold_data.csv", mode="a",
-                         header=not os.path.exists(f"Repeat_{repeat}/CF_fold_data.csv"), index=False)
-        print(f"Cropformer Repeat {repeat} fold {i} PCC: {test_corr:.4f}")
+            model.eval()
+            predictions = []
+            with torch.no_grad():
+                for x_batch, _ in test_loader:
+                    pred = model(x_batch.to(device))
+                    predictions.extend(pred.detach().cpu().numpy().reshape(-1).tolist())
 
-        del model, train_data, val_data, test_data, train_loader, val_loader, test_loader
-        gc.collect()
-        if torch.cuda.is_available():
-            torch.cuda.empty_cache()
+            test_corr = pearsonr(predictions, testY)[0]
+            cf_corr.append(float(f"{test_corr:.4f}"))
+            fold_pred = pd.DataFrame({"fold": i, "Line": testLines, "predicted": predictions, "phenotype": testY})
+            fold_pred.to_csv(f"Repeat_{repeat}/CF_fold_data.csv", mode="a",
+                             header=not os.path.exists(f"Repeat_{repeat}/CF_fold_data.csv"), index=False)
+            print(f"Cropformer Repeat {repeat} fold {i} PCC: {test_corr:.4f}")
+
+            del model, train_data, val_data, test_data, train_loader, val_loader, test_loader
+            gc.collect()
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
 
     if run_fold is not None:
         with open("CF_fold_pcc_log.csv", "a", newline="") as file:
