@@ -943,28 +943,20 @@ def run_cropformer(input, repeat, run_fold=None, max_features=10000, epochs=100,
             )
 
         def forward(self, x):
-            # x:
             # (batch, SNPs)
-
             x = x.unsqueeze(1)
 
-            # CNN:
-            # (batch, channels, SNPs)
+            # (batch, embed_dim, SNPs)
             x = self.cnn(x)
 
-            # Attention expects:
-            # (batch, sequence_length, embedding)
-            x = x.transpose(1, 2)
-
-            # (batch, embed_dim, SNPs)
+            # Reduce sequence length
             x = self.pool(x)
 
+            # (batch, sequence_length, embed_dim)
+            x = x.transpose(1, 2)
+
             # Self attention
-            attn_out, _ = self.attention(
-                x,
-                x,
-                x
-            )
+            attn_out, _ = self.attention(x, x, x)
 
             x = self.norm1(x + attn_out)
 
@@ -973,10 +965,9 @@ def run_cropformer(input, repeat, run_fold=None, max_features=10000, epochs=100,
 
             x = self.norm2(x + ffn_out)
 
-            # Pool SNP representations
+            # Global average pooling
             x = torch.mean(x, dim=1)
 
-            # Predict phenotype
             return self.output(x)
 
     def select_and_pad_features(train_x, val_x, test_x, train_y, snp_names, feature_count):
