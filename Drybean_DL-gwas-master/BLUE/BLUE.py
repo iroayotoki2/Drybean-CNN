@@ -1074,28 +1074,28 @@ def run_cropformer(input, repeat, run_fold=None, max_features=10000, epochs=100,
                 if epochs_without_improvement >= patience:
                     break
 
-            if best_state is not None:
-                model.load_state_dict(best_state)
-            torch.save(model.state_dict(), f"Repeat_{repeat}/model_CF/model_{i}.pth")
+        if best_state is not None:
+            model.load_state_dict(best_state)
+        torch.save(model.state_dict(), f"Repeat_{repeat}/model_CF/model_{i}.pth")
 
-            model.eval()
-            predictions = []
-            with torch.no_grad():
-                for x_batch, _ in test_loader:
-                    pred = model(x_batch.to(device))
-                    predictions.extend(pred.detach().cpu().numpy().reshape(-1).tolist())
+        model.eval()
+        predictions = []
+        with torch.no_grad():
+            for x_batch, _ in test_loader:
+                pred = model(x_batch.to(device))
+                predictions.extend(pred.detach().cpu().numpy().reshape(-1).tolist())
 
-            test_corr = pearsonr(predictions, testY)[0]
-            cf_corr.append(float(f"{test_corr:.4f}"))
-            fold_pred = pd.DataFrame({"fold": i, "Line": testLines, "predicted": predictions, "phenotype": testY})
-            fold_pred.to_csv(f"Repeat_{repeat}/CF_fold_data.csv", mode="a",
-                             header=not os.path.exists(f"Repeat_{repeat}/CF_fold_data.csv"), index=False)
-            print(f"Cropformer Repeat {repeat} fold {i} PCC: {test_corr:.4f}")
+        test_corr = pearsonr(predictions, testY)[0]
+        cf_corr.append(float(f"{test_corr:.4f}"))
+        fold_pred = pd.DataFrame({"fold": i, "Line": testLines, "predicted": predictions, "phenotype": testY})
+        fold_pred.to_csv(f"Repeat_{repeat}/CF_fold_data.csv", mode="a",
+                         header=not os.path.exists(f"Repeat_{repeat}/CF_fold_data.csv"), index=False)
+        print(f"Cropformer Repeat {repeat} fold {i} PCC: {test_corr:.4f}")
 
-            del model, train_data, val_data, test_data, train_loader, val_loader, test_loader
-            gc.collect()
-            if torch.cuda.is_available():
-                torch.cuda.empty_cache()
+        del model, train_data, val_data, test_data, train_loader, val_loader, test_loader
+        gc.collect()
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
 
     if run_fold is not None:
         with open("CF_fold_pcc_log.csv", "a", newline="") as file:
