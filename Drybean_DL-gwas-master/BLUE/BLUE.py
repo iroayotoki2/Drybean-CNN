@@ -37,7 +37,14 @@ rrBLUP = importr("rrBLUP")
 from rpy2.robjects import default_converter
 from rpy2.robjects import numpy2ri
 from rpy2.robjects.conversion import localconverter
+import gc
+import torch
+import torch.nn as nn
+from torch.utils.data import DataLoader, TensorDataset
+from sklearn.feature_selection import mutual_info_regression
+from sklearn.preprocessing import StandardScaler
 
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 os.environ["TF_XLA_FLAGS"] = "--tf_xla_auto_jit=2"  # New
 tf.config.set_visible_devices([], 'GPU')  # New
 gpus = tf.config.experimental.list_physical_devices('GPU')
@@ -46,7 +53,6 @@ if gpus:
         tf.config.experimental.set_memory_growth(gpu, True)
 
 ##one of K encoding
-
 
 nb_classes = 4
 
@@ -873,12 +879,6 @@ def top_selection_frequency(filename, model, k=10):
 
 
 def run_cropformer(input, repeat, run_fold=None, max_features=10000, epochs=100, batch_size=32, patience=5):
-    import gc
-    import torch
-    import torch.nn as nn
-    from torch.utils.data import DataLoader, TensorDataset
-    from sklearn.feature_selection import mutual_info_regression
-    from sklearn.preprocessing import StandardScaler
 
     class Cropformer(nn.Module):
         def __init__(
