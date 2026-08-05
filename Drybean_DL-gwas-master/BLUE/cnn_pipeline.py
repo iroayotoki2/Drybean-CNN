@@ -1109,6 +1109,47 @@ def run_cropformer(input, repeat, run_fold=None, max_features=10000, epochs=100,
             writer.writerow(["Repeat", "Fold", "PCC_Cropformer"])
             for fold in range(NUM_FOLDS):
                 writer.writerow([repeat, fold + 1, cf_corr[fold]])
+def error_summary(model=""):
+    Error_df = None
+    for i in range(1, NUM_REPEATS + 1):
+        if model:
+            path = f"Repeat_{i}/{model}_fold_data.csv"
+        else:
+            path = f"Repeat_{i}/fold_data.csv"
+        df = prediction_error(path)
+        # Rename error columns
+        df.rename(columns={"Error": f"Error_{i}"}, inplace=True)
+        if Error_df is None:
+            Error_df = df.copy()
+        else:
+            Error_df = pd.merge(Error_df, df, on='Line', how='inner')
+    Error_cols = [col for col in Error_df.columns if col.startswith("Error_")]
+    Error_df["avg_error"] = Error_df[Error_cols].mean(axis=1)
+    Error_cleaned = Error_df[["Line", "avg_error"]].sort_values(by="avg_error", ascending=True)
+    if model:
+        Error_cleaned.to_csv(f"{model}_Prediction_Error.csv", sep='\t', index=False)
+    else:
+        Error_cleaned.to_csv("Prediction_Error.csv", sep='\t', index=False)
+
+def tau_summary(model=""):
+    tau_df = []
+    for i in range(1, NUM_REPEATS + 1):
+        if model:
+            path = f"Repeat_{i}/{model}_fold_data.csv"
+        else:
+            path = f"Repeat_{i}/fold_data.csv"
+        tau, p = find_kendall_tau(path)
+        tau_vals = pd.DataFrame({"Repeat": [i], "tau": [tau], "p-value": [p]})
+        tau_df.append(tau_vals)
+    tau_df = pd.concat(tau_df, ignore_index=True)
+    final_tau = tau_df["tau"].mean()
+    std = tau_df["tau"].std()
+    if model:
+        tau_df.to_csv(f"{model}_Kendall_tau.csv", sep='\t', index=False)
+    else:
+        tau_df.to_csv("Kendall_tau.csv", sep='\t', index=False)
+    print(f"The overall tau value is {final_tau:.3f} ± {std:.3f}")
+
 
 if __name__ == '__main__':
 
@@ -1203,93 +1244,13 @@ if __name__ == '__main__':
         })
         summary.to_csv("RRBLUP_SNP_summary.csv", index=False)
     else:
-        # Compute kendall's tau for the experiment
-        tau_df = []
-        for i in range(1, 11):
-            path = f"Repeat_{i}/fold_data.csv"
-            tau, p = find_kendall_tau(path)
-            tau_vals = pd.DataFrame({"Repeat": [i], "tau": [tau], "p-value": [p]})
-            tau_df.append(tau_vals)
-        tau_df = pd.concat(tau_df, ignore_index=True)
-        final_tau = tau_df["tau"].mean()
-        std = tau_df["tau"].std()
-        tau_df.to_csv("Kendall_tau.csv", sep='\t', index=False)
-        print(f"The overall tau value is {final_tau:.3f} ± {std:.3f}")
-
-        # Error statistics
-        Error_df = None
-        for i in range(1, 11):
-            path = f"Repeat_{i}/fold_data.csv"
-            df = prediction_error(path)
-            # Rename error columns
-            df.rename(columns={"Error": f"Error_{i}"}, inplace=True)
-            if Error_df is None:
-                Error_df = df.copy()
-            else:
-                Error_df = pd.merge(Error_df, df, on='Line', how='inner')
-        Error_cols = [col for col in Error_df.columns if col.startswith("Error_")]
-        Error_df["avg_error"] = Error_df[Error_cols].mean(axis=1)
-        Error_cleaned = Error_df[["Line", "avg_error"]].sort_values(by="avg_error", ascending=True)
-        Error_cleaned.to_csv("Prediction_Error.csv", sep='\t', index=False)
-
-    #Same metrics for GBLUP
-        GB_tau_df = []
-        for i in range(1, 11):
-            path = f"Repeat_{i}/GB_fold_data.csv"
-            tau, p = find_kendall_tau(path)
-            tau_vals = pd.DataFrame({"Repeat": [i], "tau": [tau], "p-value": [p]})
-            GB_tau_df.append(tau_vals)
-        GB_tau_df = pd.concat(GB_tau_df, ignore_index=True)
-        final_tau = GB_tau_df["tau"].mean()
-        std = GB_tau_df["tau"].std()
-        GB_tau_df.to_csv("GB_Kendall_tau.csv", sep='\t', index=False)
-        print(f"The overall tau value for GBLUP is {final_tau:.3f} ± {std:.3f}")
-
-        # Error statistics
-        GB_Error_df = None
-        for i in range(1, 11):
-            path = f"Repeat_{i}/GB_fold_data.csv"
-            df = prediction_error(path)
-            # Rename error columns
-            df.rename(columns={"Error": f"Error_{i}"}, inplace=True)
-            if GB_Error_df is None:
-                GB_Error_df = df.copy()
-            else:
-                GB_Error_df = pd.merge(GB_Error_df, df, on='Line', how='inner')
-        Error_cols = [col for col in GB_Error_df.columns if col.startswith("Error_")]
-        GB_Error_df["avg_error"] = GB_Error_df[Error_cols].mean(axis=1)
-        Error_cleaned = GB_Error_df[["Line", "avg_error"]].sort_values(by="avg_error", ascending=True)
-        Error_cleaned.to_csv("GB_Prediction_Error.csv", sep='\t', index=False)
-
-        #RRBLUP metrics
-        # Compute kendall's tau for the experiment
-        tau_df = []
-        for i in range(1, 11):
-            path = f"Repeat_{i}/RB_fold_data.csv"
-            tau, p = find_kendall_tau(path)
-            tau_vals = pd.DataFrame({"Repeat": [i], "tau": [tau], "p-value": [p]})
-            tau_df.append(tau_vals)
-        tau_df = pd.concat(tau_df, ignore_index=True)
-        final_tau = tau_df["tau"].mean()
-        std = tau_df["tau"].std()
-        tau_df.to_csv("RB_Kendall_tau.csv", sep='\t', index=False)
-        print(f"The overall tau value for rr-BLUP is {final_tau:.3f} ± {std:.3f}")
-
-        # Error statistics
-        Error_df = None
-        for i in range(1, 11):
-            path = f"Repeat_{i}/RB_fold_data.csv"
-            df = prediction_error(path)
-            # Rename error columns
-            df.rename(columns={"Error": f"Error_{i}"}, inplace=True)
-            if Error_df is None:
-                Error_df = df.copy()
-            else:
-                Error_df = pd.merge(Error_df, df, on='Line', how='inner')
-        Error_cols = [col for col in Error_df.columns if col.startswith("Error_")]
-        Error_df["avg_error"] = Error_df[Error_cols].mean(axis=1)
-        Error_cleaned = Error_df[["Line", "avg_error"]].sort_values(by="avg_error", ascending=True)
-        Error_cleaned.to_csv("RB_Prediction_Error.csv", sep='\t', index=False)
+        # Compute evaluation metrics for the experiment
+        tau_summary()
+        tau_summary("GB")
+        tau_summary("RB")
+        error_summary()
+        error_summary("GB")
+        error_summary("RB")
 
         top_mean_predictions(filename="fold_data.csv",model="CNN")
         top_selection_frequency(filename="fold_data.csv",model="CNN")
@@ -1298,31 +1259,7 @@ if __name__ == '__main__':
         top_mean_predictions(filename="RB_fold_data.csv", model="RRBLUP")
         top_selection_frequency(filename="RB_fold_data.csv", model="RRBLUP")
         if not args.skip_cropformer:
-            tau_df = []
-            for i in range(1, 11):
-                path = f"Repeat_{i}/CF_fold_data.csv"
-                tau, p = find_kendall_tau(path)
-                tau_vals = pd.DataFrame({"Repeat": [i], "tau": [tau], "p-value": [p]})
-                tau_df.append(tau_vals)
-            tau_df = pd.concat(tau_df, ignore_index=True)
-            final_tau = tau_df["tau"].mean()
-            std = tau_df["tau"].std()
-            tau_df.to_csv("CF_Kendall_tau.csv", sep='\t', index=False)
-            print(f"The overall tau value for Cropformer is {final_tau:.3f} Â± {std:.3f}")
-
-            Error_df = None
-            for i in range(1, 11):
-                path = f"Repeat_{i}/CF_fold_data.csv"
-                df = prediction_error(path)
-                df.rename(columns={"Error": f"Error_{i}"}, inplace=True)
-                if Error_df is None:
-                    Error_df = df.copy()
-                else:
-                    Error_df = pd.merge(Error_df, df, on='Line', how='inner')
-            Error_cols = [col for col in Error_df.columns if col.startswith("Error_")]
-            Error_df["avg_error"] = Error_df[Error_cols].mean(axis=1)
-            Error_cleaned = Error_df[["Line", "avg_error"]].sort_values(by="avg_error", ascending=True)
-            Error_cleaned.to_csv("CF_Prediction_Error.csv", sep='\t', index=False)
-
+            tau_summary("CF")
+            error_summary("CF")
             top_mean_predictions(filename="CF_fold_data.csv", model="Cropformer")
             top_selection_frequency(filename="CF_fold_data.csv", model="Cropformer")

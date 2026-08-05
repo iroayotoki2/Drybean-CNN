@@ -15,7 +15,7 @@ with open("fold_pcc_log.csv", "w") as f:
 
 for fold in range(1, NUM_FOLDS + 1):
     print(f"\n🚀 Running fold {fold}...\n")
-    result = subprocess.run(['python3', 'BLUE.py', args.IMP_file, args.QA_file, '--fold', str(fold)])
+    result = subprocess.run(['python3', 'cnn_pipeline.py', args.IMP_file, args.QA_file, '--fold', str(fold)])
 
     if result.returncode != 0:
         print(f"❌ Fold {fold} failed with return code {result.returncode}")
@@ -23,4 +23,4 @@ for fold in range(1, NUM_FOLDS + 1):
 
 # After all folds, run the full summary block
 print("\n✅ All folds completed. Generating saliency summary and top SNPs...\n")
-subprocess.run(['python3', 'BLUE.py', args.IMP_file, args.QA_file, '--summary'])
+subprocess.run(['python3', 'cnn_pipeline.py', args.IMP_file, args.QA_file, '--summary'])
