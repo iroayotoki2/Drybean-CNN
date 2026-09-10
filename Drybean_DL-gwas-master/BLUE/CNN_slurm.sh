@@ -27,7 +27,6 @@ which plink
 plink --version
 
 # LD pruning
-python ld_pruning.py --vcf imputed_GenotypicData.vcf
 python ld_pruning.py --vcf Raw_GenotypicData.vcf
 
 
@@ -58,13 +57,23 @@ if torch.cuda.is_available():
 EOF
 
 # Run Cropformer/CNN/GBLUP/rrBLUP pipeline
-python BLUE.py \
-    LD_imputed_GenotypicData.vcf \
-    LD_Raw_GenotypicData.vcf \
-    --pheno pheno_normalized.tsv
+python benchmark.py \
+    Raw_GenotypicData.vcf \
+    --pheno pheno_normalized.tsv \
+    -- cnn-only
+
 
 # Generate final summaries
-python BLUE.py \
-    LD_imputed_GenotypicData_processed.tsv \
-    LD_Raw_GenotypicData_processed.tsv \
+python benchmark.py \
+    Raw_GenotypicData.vcf \
+    --summary \
+    --cnn-only
+
+python predict.py \
+    Raw_GenotypicData.vcf \
+    Raw_GenotypicData.vcf \
+
+python predict.py \
+    Raw_GenotypicData.vcf \
+    Raw_GenotypicData.vcf \
     --summary
