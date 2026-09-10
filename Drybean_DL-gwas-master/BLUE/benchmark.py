@@ -43,6 +43,8 @@ import torch.nn as nn
 from torch.utils.data import DataLoader, TensorDataset
 from sklearn.feature_selection import mutual_info_regression
 from sklearn.preprocessing import StandardScaler
+import pysam
+from pysam import VariantFile
 from cnn_pipeline import *
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 os.environ["TF_XLA_FLAGS"] = "--tf_xla_auto_jit=2"  # New
@@ -62,9 +64,7 @@ NUM_REPEATS = 10
 if __name__ == '__main__':
 
     # os.chdir("MOISTURE")
-
     parser = argparse.ArgumentParser()
-    parser.add_argument('IMP_file', help="Imputed file")
     parser.add_argument('QA_file', help="QA file")
     parser.add_argument('--pheno', help="Phenotype file")
     parser.add_argument('--fold', type=int, default=None, help="Fold number (1–10)")
@@ -72,10 +72,19 @@ if __name__ == '__main__':
     parser.add_argument('--skip-cropformer', action='store_true', help="Skip Cropformer benchmark")
     parser.add_argument('--cropformer-epochs', type=int, default=100, help="Maximum Cropformer training epochs")
     parser.add_argument('--cropformer-max-features', type=int, default=10000, help="Cropformer SNP feature count after train-only selection/padding")
+    parser.add_argument('--cnn-only',action='store_true',help='Run only the CNN benchmark')
     args = parser.parse_args()
 
-    IMP_input = args.IMP_file
+    if not args.summary and not args.pheno:
+        parser.error("--pheno is required when running the benchmark training")
+#IMP_input currently being used as an alias and a placeholder for future experiments with imputed data.
+#Script currently runs models and results on QA file
+    IMP_input = args.QA_file
     QA_input = args.QA_file
+
+    IMP_input = f"LD_{IMP_input}"
+    QA_input = f"LD_{QA_input}"
+
 
     # Data cleaning by file format to produce tsvs for the pipeline
     if IMP_input.endswith(".vcf"):
@@ -112,9 +121,10 @@ if __name__ == '__main__':
         else:
             for fold in folds:
                 main(IMP_input, QA_input, repeat=i, run_fold=fold)
-                gblup_main(QA_input, repeat=i, run_fold=fold)
-                run_rrblup(QA_input, repeat=i, run_fold=fold)
-                if not args.skip_cropformer:
+                if not args.cnn_only:
+                    gblup_main(QA_input, repeat=i, run_fold=fold)
+                    run_rrblup(QA_input, repeat=i, run_fold=fold)
+                if not args.cnn_only and not args.skip_cropformer:
                     run_cropformer(
                         QA_input,
                         repeat=i,
@@ -140,26 +150,37 @@ if __name__ == '__main__':
         export_top_k_saliency(snp_names=merged_df["SNP"], saliency_values=merged_df["avg_saliency"])
         plot_average_saliency(avg_saliency=merged_df["avg_saliency"])
 
-        df = pd.read_csv("RRBLUP_u_effects.csv")
-        # Extract only SNP columns
-        snp_names = df.columns[2:]
-        u_matrix = df[snp_names]
-        summary = pd.DataFrame({
-            "SNP": snp_names,
-            "Mean_Effect": u_matrix.mean(axis=0).values,
-            "SD_Effect": u_matrix.std(axis=0).values,
-            "Abs_Mean_Effect": np.abs(u_matrix.mean(axis=0)).values
-        })
-        summary.to_csv("RRBLUP_SNP_summary.csv", index=False)
+        if os.path.exists("RRBLUP_u_effects.csv"):
+            df = pd.read_csv("RRBLUP_u_effects.csv")
+            # Extract only SNP columns
+            snp_names = df.columns[2:]
+            u_matrix = df[snp_names]
+            summary = pd.DataFrame({
+                "SNP": snp_names,
+                "Mean_Effect": u_matrix.mean(axis=0).values,
+                "SD_Effect": u_matrix.std(axis=0).values,
+                "Abs_Mean_Effect": np.abs(u_matrix.mean(axis=0)).values
+            })
+            summary.to_csv("RRBLUP_SNP_summary.csv", index=False)
     else:
         # Compute evaluation metrics for the experiment
         tau_summary()
-        tau_summary("GB")
-        tau_summary("RB")
         error_summary()
-        error_summary("GB")
-        error_summary("RB")
-        if not args.skip_cropformer:
+        top_mean_predictions(filename="fold_data.csv", model="CNN")
+        top_selection_frequency(filename="fold_data.csv", model="CNN")
+
+        if not args.cnn_only:
+            tau_summary("GB")
+            tau_summary("RB")
+            error_summary("GB")
+            error_summary("RB")
+            top_mean_predictions(filename="GB_fold_data.csv", model="GBLUP")
+            top_selection_frequency(filename="GB_fold_data.csv", model="GBLUP")
+            top_mean_predictions(filename="RB_fold_data.csv", model="RRBLUP")
+            top_selection_frequency(filename="RB_fold_data.csv", model="RRBLUP")
+        if not args.cnn_only and not args.skip_cropformer:
             tau_summary("CF")
             error_summary("CF")
+            top_mean_predictions(filename="CF_fold_data.csv", model="Cropformer")
+            top_selection_frequency(filename="CF_fold_data.csv", model="Cropformer")
 

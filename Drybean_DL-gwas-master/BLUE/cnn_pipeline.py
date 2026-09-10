@@ -43,7 +43,8 @@ import torch.nn as nn
 from torch.utils.data import DataLoader, TensorDataset
 from sklearn.feature_selection import mutual_info_regression
 from sklearn.preprocessing import StandardScaler
-
+import pysam
+from pysam import VariantFile
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 os.environ["TF_XLA_FLAGS"] = "--tf_xla_auto_jit=2"  # New
 tf.config.set_visible_devices([], 'GPU')  # New
@@ -211,9 +212,11 @@ def show_images_plot(saliency, wald, outname):
     plt.close()
 
 
-def plot_average_saliency(avg_saliency, output_file="avg_saliency_across_folds.png", repeat=0):
+def plot_average_saliency(avg_saliency, output_file="avg_saliency_across_folds.png", repeat=0, output = "Benchmark"):
     if repeat != 0:
         output_file = f"Repeat_{repeat}/{output_file}"
+    else:
+        output_file = f"{output}/{output_file}"
     plt.figure(figsize=(15, 6))
     plt.plot(avg_saliency, '.', markersize=3)
     plt.xlabel("SNP Index")
@@ -246,12 +249,14 @@ def get_saliency(input_tensor, model):
     return saliency.numpy().squeeze()  # shape: (num_SNPs,)
 
 
-def export_top_k_saliency(snp_names, saliency_values, k=20, output_file="top_saliency_snps.csv", repeat=0):
+def export_top_k_saliency(snp_names, saliency_values, k=20, output_file="top_saliency_snps.csv", repeat=0, output = "Benchmark"):
     # Sort SNPs by saliency (descending)
     top_indices = np.argsort(saliency_values)[::-1][:k]
     top_snps = [(snp_names[i], saliency_values[i]) for i in top_indices]
     if repeat != 0:
         output_file = f"Repeat_{repeat}/{output_file}"
+    else:
+        output_file = f"{output}/{output_file}"
     # Write to CSV
     with open(output_file, mode='w', newline='') as file:
         writer = csv.writer(file)
@@ -566,6 +571,40 @@ def csv_preprocessing(input_path, output_path=None):
 def combine_pheno(input_path, pheno_path, output_path=None):
     Geno = pd.read_csv(input_path, sep='\t')
     pheno = pd.read_csv(pheno_path, sep='\t')
+
+    # Validate required columns
+    required_geno_cols = {'Line'}
+    required_pheno_cols = {'Line', 'BLUEs', 'norm_phe'}
+
+    missing_geno_cols = required_geno_cols - set(Geno.columns)
+    missing_pheno_cols = required_pheno_cols - set(pheno.columns)
+
+    if missing_geno_cols:
+        raise ValueError(
+            f"Genotype file is missing required columns: "
+            f"{sorted(missing_geno_cols)}"
+        )
+
+    if missing_pheno_cols:
+        raise ValueError(
+            f"Phenotype file is missing required columns: "
+            f"{sorted(missing_pheno_cols)}"
+        )
+
+    # Validate duplicate Line entries
+    duplicate_geno = Geno["Line"].duplicated().sum()
+    duplicate_pheno = pheno["Line"].duplicated().sum()
+
+    if duplicate_geno > 0:
+        raise ValueError(
+            f"Genotype file contains {duplicate_geno} duplicate Line entries."
+        )
+
+    if duplicate_pheno > 0:
+        raise ValueError(
+            f"Phenotype file contains {duplicate_pheno} duplicate Line entries."
+        )
+
     Geno["Line"] = Geno["Line"].str.replace(" ", "_")
     pheno["Line"] = pheno["Line"].str.replace(" ", "_")
     merged_df = pd.merge(Geno, pheno, on='Line', how='left')
@@ -586,7 +625,6 @@ def combine_pheno(input_path, pheno_path, output_path=None):
 
     final_df.to_csv(output_path, sep='\t', index=False)
     return output_path
-
 
 def dummy_folds_column(input_path, output_path=None):
     df = pd.read_csv(input_path, sep='\t')
@@ -822,7 +860,7 @@ def run_rrblup(input, repeat, run_fold=None):
                 for fold in range(NUM_FOLDS):
                     writer.writerow([repeat, fold + 1, RB_corr[fold]])
 
-def top_mean_predictions(filename, model, k=15):
+def top_mean_predictions(filename, model, k=15, output = "Benchmark"):
     merged_df = None
     for i in range(1, NUM_REPEATS + 1):
         df = pd.read_csv(f"Repeat_{i}/{filename}")
@@ -842,9 +880,9 @@ def top_mean_predictions(filename, model, k=15):
         .sort_values("avg_prediction", ascending=False)
         .head(k)
     )
-    top_k_df.to_csv(f"{model}_mean_prediction_ranking.csv", index=False)
+    top_k_df.to_csv(f"{output}/{model}_mean_prediction_ranking.csv", index=False)
 
-def top_selection_frequency(filename, model, k=10):
+def top_selection_frequency(filename, model, k=10, output = "Benchmark"):
     frequency = {}
     for i in range(1, NUM_REPEATS + 1):
         df = pd.read_csv(f"Repeat_{i}/{filename}")
@@ -873,7 +911,7 @@ def top_selection_frequency(filename, model, k=10):
     )
 
     frequency_df.to_csv(
-        f"{model}_top_{k}_selection_frequency.csv",
+        f"{output}/{model}_top_{k}_selection_frequency.csv",
         index=False
     )
 
@@ -1109,7 +1147,7 @@ def run_cropformer(input, repeat, run_fold=None, max_features=10000, epochs=100,
             writer.writerow(["Repeat", "Fold", "PCC_Cropformer"])
             for fold in range(NUM_FOLDS):
                 writer.writerow([repeat, fold + 1, cf_corr[fold]])
-def error_summary(model=""):
+def error_summary(model="", output = "Benchmark"):
     Error_df = None
     for i in range(1, NUM_REPEATS + 1):
         if model:
@@ -1127,11 +1165,11 @@ def error_summary(model=""):
     Error_df["avg_error"] = Error_df[Error_cols].mean(axis=1)
     Error_cleaned = Error_df[["Line", "avg_error"]].sort_values(by="avg_error", ascending=True)
     if model:
-        Error_cleaned.to_csv(f"{model}_Prediction_Error.csv", sep='\t', index=False)
+        Error_cleaned.to_csv(f"{output}/{model}_Prediction_Error.csv", sep='\t', index=False)
     else:
-        Error_cleaned.to_csv("Prediction_Error.csv", sep='\t', index=False)
+        Error_cleaned.to_csv(f"{output}/Prediction_Error.csv", sep='\t', index=False)
 
-def tau_summary(model=""):
+def tau_summary(model="", output = "Benchmark"):
     tau_df = []
     for i in range(1, NUM_REPEATS + 1):
         if model:
@@ -1145,9 +1183,9 @@ def tau_summary(model=""):
     final_tau = tau_df["tau"].mean()
     std = tau_df["tau"].std()
     if model:
-        tau_df.to_csv(f"{model}_Kendall_tau.csv", sep='\t', index=False)
+        tau_df.to_csv(f"{output}/{model}_Kendall_tau.csv", sep='\t', index=False)
     else:
-        tau_df.to_csv("Kendall_tau.csv", sep='\t', index=False)
+        tau_df.to_csv(f"{output}/Kendall_tau.csv", sep='\t', index=False)
     print(f"The overall tau value is {final_tau:.3f} ± {std:.3f}")
 
 
